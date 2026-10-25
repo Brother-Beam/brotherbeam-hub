@@ -5,7 +5,7 @@ The company's internal hub: home page, Roadmap and Work Station with shared stat
 ## How it fits together
 
 ```
-Browser  ->  this site on Vercel (static pages + /api/tasks)  ->  newco-api on Railway (Express + Postgres)
+Browser  ->  this site on Vercel (static pages + /api/tasks)  ->  brotherbeam-api on Railway (Express + Postgres)
                                   adds the API token server side          checks the token, stores JSON
 ```
 
@@ -21,8 +21,8 @@ Nothing else references the name.
 
 ## Deploy, first time
 
-1. **Railway**: deploy `newco-api` first (its README has the steps). Copy its public URL and the `API_TOKEN` you set there.
-2. **Vercel**: Add New Project -> Import `newco-hub` from GitHub -> Framework preset: Other -> Deploy.
+1. **Railway**: deploy `brotherbeam-api` first (its README has the steps). Copy its public URL and the `API_TOKEN` you set there.
+2. **Vercel**: Add New Project -> Import `brotherbeam-hub` from GitHub -> Framework preset: Other -> Deploy.
 3. Vercel -> Project -> Settings -> Environment Variables: `HUB_API_BASE` = the Railway URL (no trailing slash), `HUB_API_TOKEN` = the token. Redeploy.
 4. Open `/roadmap.html`, enter the gate password from `site.js`, change a status, and confirm the bar says "saved for everyone".
 

@@ -6,7 +6,7 @@
 //   POST /api/tasks?key=action-items {value}   -> saves and returns the same shape
 //
 // Vercel environment variables (Project -> Settings -> Environment Variables):
-//   HUB_API_BASE   e.g. https://newco-api-production.up.railway.app
+//   HUB_API_BASE   e.g. https://brotherbeam-api-production.up.railway.app
 //   HUB_API_TOKEN  the same value as API_TOKEN on the Railway service
 const BASE = (process.env.HUB_API_BASE || '').replace(/\/+$/, '');
 const TOKEN = process.env.HUB_API_TOKEN || '';
