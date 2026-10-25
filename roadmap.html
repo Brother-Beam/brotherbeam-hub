@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Roadmap &amp; Work Station</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="brand.css" />
+    <script src="site.js"></script>
+    <style>
+      body.locked > *:not(#gate) { display: none; }
+      .gate { position: fixed; inset: 0; background: var(--ink); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 50; }
+      .gate-card { width: 100%; max-width: 360px; background: #fff; border-radius: 16px; padding: 26px 24px; display: flex; flex-direction: column; gap: 10px; }
+      .gate-card .brand { font-weight: 800; letter-spacing: .2em; color: var(--ink); }
+      .gate-card label { font-size: 12px; font-weight: 700; color: var(--ink); }
+      .gate-card input { font: inherit; font-size: 16px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; }
+      .gate-card button { font-weight: 800; background: var(--accent); color: #fff; border: 0; border-radius: 999px; padding: 11px; }
+      .gate-err { font-size: 12px; color: #B3382C; min-height: 16px; margin: 0; }
+
+      .tabs { display: flex; gap: 6px; margin-top: 16px; background: var(--soft); border-radius: 999px; padding: 4px; width: max-content; }
+      .tabs button { border: 0; background: transparent; border-radius: 999px; padding: 8px 16px; font-weight: 800; color: var(--body); }
+      .tabs button.on { background: var(--ink); color: #fff; }
+      body.view-ws #rm-view, body.view-rm #ws-view { display: none; }
+
+      .prog { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; margin-top: 14px; flex-wrap: wrap; }
+      .prog .bar2 { flex: 1; min-width: 160px; height: 10px; background: var(--soft); border-radius: 999px; overflow: hidden; }
+      .prog .fill { height: 100%; background: var(--accent); width: 0; transition: .3s; }
+      .prog b { white-space: nowrap; }
+      .prog .who { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+      .prog .who input { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; width: 130px; }
+      .prog .sync { font-size: 11px; color: var(--muted); width: 100%; } .prog .sync.err { color: #B3382C; }
+      .wi { display: grid; grid-template-columns: 34px 1fr 180px; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-top: 10px; border-left: 6px solid var(--line); }
+      .wi.s-progress { border-left-color: var(--accent); } .wi.s-blocked { border-left-color: #B3382C; } .wi.s-done { border-left-color: var(--good); opacity: .75; }
+      .wi .n { width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+      .wi .t { font-size: 15px; font-weight: 800; color: var(--ink); }
+      .wi .own { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-ink); margin-top: 3px; }
+      .wi .d { font-size: 12.5px; margin-top: 6px; line-height: 1.5; }
+      .wi .subs { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+      .wi .subs label { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--ink); } .wi .subs label.done { color: var(--muted); text-decoration: line-through; }
+      .wi textarea { width: 100%; margin-top: 8px; font: inherit; font-size: 12.5px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; min-height: 44px; resize: vertical; }
+      .wi select { font: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; width: 100%; }
+      .wi .stamp { display: block; font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
+      .log { margin-top: 16px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+      .tl { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-top: 14px; }
+      .tl div { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--body); text-align: center; }
+      .tl div.now { background: var(--ink); color: #fff; border-color: var(--ink); }
+      .init { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-top: 12px; }
+      .init .hd { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+      .init .num { font-size: 10.5px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--accent-ink); }
+      .init .own { font-size: 12px; color: var(--muted); }
+      .init .goal { font-size: 13px; margin-top: 6px; line-height: 1.5; }
+      .init .lh { font-size: 10.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 12px 0 4px; }
+      .init .u { font-size: 12.5px; line-height: 1.55; padding: 6px 0; border-top: 1px solid var(--soft); } .init .u .dt { font-weight: 800; color: var(--ink); margin-right: 6px; }
+      @media (max-width: 760px) { .wi { grid-template-columns: 34px 1fr; } .wi .ctl { grid-column: 2; } .tl { grid-template-columns: repeat(3, 1fr); } }
+    </style>
+  </head>
+  <body class="locked view-ws">
+    <div class="gate" id="gate" role="dialog" aria-label="Password">
+      <form class="gate-card" id="gate-form" autocomplete="off">
+        <div class="brand" data-site="name">NEWCO</div>
+        <p class="kick">Internal &middot; Roadmap and Work Station</p>
+        <label for="gate-pw">Password</label>
+        <input id="gate-pw" type="password" autocomplete="off" autofocus />
+        <button type="submit">Open</button>
+        <p class="gate-err" id="gate-err"></p>
+      </form>
+    </div>
+    <script>
+      (function () {
+        var S = window.SITE || {}; var KEY = 'hub-gate-v1', PW = String(S.password || 'newco').toLowerCase();
+        document.querySelectorAll('[data-site]').forEach(function (el) { var v = S[el.dataset.site]; if (v) el.textContent = v; });
+        document.title = (S.name || 'Hub') + ' · Roadmap & Work Station';
+        var ok = false; try { ok = localStorage.getItem(KEY) === 'ok'; } catch (e) {}
+        if (ok) { document.body.classList.remove('locked'); var g = document.getElementById('gate'); if (g) g.remove(); return; }
+        document.getElementById('gate-form').addEventListener('submit', function (ev) {
+          ev.preventDefault();
+          var v = (document.getElementById('gate-pw').value || '').trim().toLowerCase();
+          if (v === PW) { try { localStorage.setItem(KEY, 'ok'); } catch (e) {} document.body.classList.remove('locked'); document.getElementById('gate').remove(); }
+          else { document.getElementById('gate-err').textContent = 'That is not it.'; document.getElementById('gate-pw').select(); }
+        });
+      })();
+    </script>
+
+    <div class="bar">
+      <div class="in">
+        <a href="index.html">&larr; Hub</a>
+        <span>Internal &middot; Roadmap &amp; Work Station</span>
+        <span class="brand"><i></i><span data-site="name">NEWCO</span></span>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <p class="kick" data-site="fullName">NewCo Advisory</p>
+      <h1>Roadmap &amp; Work Station</h1>
+      <p class="sub">The Work Station is what is due now, with shared status. The Roadmap is where we are going. Both are the source of truth; email and chat point here.</p>
+      <div class="tabs"><button type="button" id="tab-ws" class="on" onclick="showView('ws')">Work Station <span id="ws-count"></span></button><button type="button" id="tab-rm" onclick="showView('rm')">Roadmap</button></div>
+
+      <div id="ws-view">
+        <div class="prog">
+          <div class="bar2"><div class="fill" id="ws-fill"></div></div>
+          <b id="ws-prog-text">0 of 0 done</b>
+          <div class="who">Working as <input id="ws-name" placeholder="your name" /></div>
+          <div class="sync" id="ws-sync">loading the shared checklist&hellip;</div>
+        </div>
+        <div id="ws-list"></div>
+        <div class="log" id="ws-log"></div>
+      </div>
+
+      <div id="rm-view">
+        <div class="tl" id="tl"></div>
+        <div id="inits"></div>
+      </div>
+
+      <p class="foot"><span><b data-site="fullName">NewCo Advisory</b> &middot; Roadmap &amp; Work Station</span><span>Shared state lives in the company&rsquo;s own store on Railway, through /api/tasks.</span></p>
+    </div>
+
+    <script>
+      (function () {
+        // ===== Work Station items: edit this list as the company's priorities change =====
+        var ITEMS = [
+          { id: 'name', t: 'Pick the name, lock the domain and the brand basics', own: 'All three founders', d: 'One name, one domain, one logo mark, three colors. Then swap them into site.js and brand.css and the whole hub follows.', subs: [['name', 'Name agreed'], ['domain', 'Domain bought'], ['brand', 'Colors and mark chosen'], ['swap', 'site.js and brand.css updated']] },
+          { id: 'entity', t: 'Form the company and open the accounts', own: 'Mike + [Brother]', d: 'Entity type, operating agreement with the equity split and roles, EIN, bank account, bookkeeping. Counsel and CPA named.', subs: [['entity', 'Entity formed'], ['agreement', 'Operating agreement signed'], ['bank', 'Bank and bookkeeping live']] },
+          { id: 'offer', t: 'Define the offer and the price', own: '[Friend] + Mike', d: 'What we sell in one page: the Map, the Design, the Implementation, the Run. Fixed-fee packages where we can, with the first-engagement price we would actually sign.', subs: [['packages', 'Packages written'], ['pricing', 'Prices set'], ['onepager', 'One-pager done']] },
+          { id: 'hub', t: 'Stand up the work hub for real', own: 'Mike', d: 'This hub deployed on Vercel with its own store on Railway in the company&rsquo;s own workspace, the token set, the password changed, the three of us inside it.', subs: [['vercel', 'Hub deployed on Vercel'], ['railway', 'Store deployed on Railway, in a new workspace'], ['token', 'API token set on both sides'], ['password', 'Gate password changed from the default']] },
+          { id: 'clients', t: 'Line up the first three conversations', own: 'All three founders', d: 'Three businesses we already know, each a candidate for a Map engagement. Names, the owner we know, the date of the first conversation.' },
+          { id: 'playbook', t: 'Write the engagement playbook', own: 'Mike + [Friend]', d: 'How a Map runs week by week, the artifacts we hand over, and the client hub template we stand up on day one.' }
+        ];
+        var STATUS = [['todo', 'Not started'], ['progress', 'In progress'], ['blocked', 'Blocked'], ['done', 'Done']];
+        var KEY = 'action-items', LKEY = 'hub-ws-local', NKEY = 'hub-ws-name';
+        var state = { items: {}, log: [] }, online = false, timer = null;
+        var listEl = document.getElementById('ws-list'), logEl = document.getElementById('ws-log'), syncEl = document.getElementById('ws-sync'), nameEl = document.getElementById('ws-name');
+        try { nameEl.value = localStorage.getItem(NKEY) || ''; } catch (e) {}
+        nameEl.addEventListener('change', function () { try { localStorage.setItem(NKEY, nameEl.value.trim()); } catch (e) {} });
+        function me() { return (nameEl.value || '').trim() || 'someone'; }
+        function esc(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
+        function when(iso) { if (!iso) return ''; try { var d = new Date(iso); return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; } }
+        function it(id) { return state.items[id] = state.items[id] || { status: 'todo', note: '', subs: {} }; }
+        function title(id) { for (var i = 0; i < ITEMS.length; i++) if (ITEMS[i].id === id) return ITEMS[i].t.split(':')[0]; return id; }
+        function label(v) { for (var i = 0; i < STATUS.length; i++) if (STATUS[i][0] === v) return STATUS[i][1]; return v; }
+        function render() {
+          var done = 0;
+          listEl.innerHTML = ITEMS.map(function (x, i) {
+            var s = it(x.id); if (s.status === 'done') done++;
+            var subs = x.subs ? '<div class="subs">' + x.subs.map(function (sb) { var on = !!(s.subs && s.subs[sb[0]]); return '<label class="' + (on ? 'done' : '') + '"><input type="checkbox" data-sub="' + x.id + ':' + sb[0] + '"' + (on ? ' checked' : '') + ' /><span>' + esc(sb[1]) + '</span></label>'; }).join('') + '</div>' : '';
+            var opts = STATUS.map(function (o) { return '<option value="' + o[0] + '"' + (s.status === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('');
+            var stamp = s.at ? 'Updated by <b>' + esc(s.by || 'someone') + '</b><br>' + esc(when(s.at)) : 'Not touched yet';
+            return '<div class="wi s-' + esc(s.status) + '"><span class="n">' + (i + 1) + '</span><div><div class="t">' + x.t + '</div><div class="own">' + esc(x.own) + '</div><div class="d">' + x.d + '</div>' + subs + '<textarea data-note="' + x.id + '" placeholder="Note: what happened, what is next, who said what">' + esc(s.note || '') + '</textarea></div><div class="ctl"><select data-status="' + x.id + '">' + opts + '</select><span class="stamp">' + stamp + '</span></div></div>';
+          }).join('');
+          document.getElementById('ws-fill').style.width = Math.round(done / ITEMS.length * 100) + '%';
+          document.getElementById('ws-prog-text').textContent = done + ' of ' + ITEMS.length + ' done';
+          document.getElementById('ws-count').textContent = '· ' + (ITEMS.length - done) + ' open';
+          logEl.innerHTML = (state.log || []).slice(-8).reverse().map(function (l) { return '<div><b>' + esc(l.by) + '</b> &middot; ' + esc(when(l.at)) + ' &middot; ' + esc(l.text) + '</div>'; }).join('');
+          listEl.querySelectorAll('[data-status]').forEach(function (el) { el.addEventListener('change', function () { var s = it(el.dataset.status); s.status = el.value; touch(s, 'set ' + title(el.dataset.status) + ' to ' + label(el.value)); }); });
+          listEl.querySelectorAll('[data-note]').forEach(function (el) { el.addEventListener('change', function () { var s = it(el.dataset.note); s.note = el.value; touch(s, 'noted on ' + title(el.dataset.note), true); }); });
+          listEl.querySelectorAll('[data-sub]').forEach(function (el) { el.addEventListener('change', function () { var p = el.dataset.sub.split(':'), s = it(p[0]); s.subs = s.subs || {}; s.subs[p[1]] = el.checked; touch(s, (el.checked ? 'checked ' : 'unchecked ') + 'a step on ' + title(p[0])); }); });
+        }
+        function touch(s, text, quiet) { s.by = me(); s.at = new Date().toISOString(); if (!quiet) { state.log = (state.log || []).concat([{ by: me(), at: s.at, text: text }]).slice(-40); } save(); render(); }
+        function save() {
+          try { localStorage.setItem(LKEY, JSON.stringify(state)); } catch (e) {}
+          clearTimeout(timer);
+          timer = setTimeout(function () {
+            timer = null; syncEl.textContent = 'saving…'; syncEl.className = 'sync';
+            fetch('/api/tasks?key=' + KEY, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ value: state }) })
+              .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+              .then(function () { online = true; syncEl.textContent = 'saved for everyone · ' + when(new Date().toISOString()); syncEl.className = 'sync'; })
+              .catch(function (e) { online = false; syncEl.textContent = 'could not reach the shared store (' + e.message + '); saved on this device only'; syncEl.className = 'sync err'; });
+          }, 500);
+        }
+        function load() {
+          fetch('/api/tasks?key=' + KEY).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(function (j) { online = true; if (j && j.value && j.value.items) { state = j.value; try { localStorage.setItem(LKEY, JSON.stringify(state)); } catch (e) {} } syncEl.textContent = 'shared · last change ' + (j && j.updated_at ? when(j.updated_at) : 'none yet'); syncEl.className = 'sync'; render(); })
+            .catch(function (e) { online = false; try { state = JSON.parse(localStorage.getItem(LKEY)) || state; } catch (x) {} syncEl.textContent = 'shared store not deployed yet (' + e.message + '); showing this device’s copy'; syncEl.className = 'sync err'; render(); });
+        }
+        render(); load();
+        setInterval(function () { if (online && !timer) load(); }, 60000);
+
+        // ===== Roadmap: months and initiatives =====
+        var INITS = [
+          { n: '01', t: 'Company formation', own: 'Mike + [Brother]', goal: 'A legal entity, an agreement between the three of us, a bank account and clean books before the first invoice.', log: [['Oct 24', 'Baseline hub created. Entity, agreement, bank and bookkeeping are the first Work Station items.']] },
+          { n: '02', t: 'Offer and pricing', own: '[Friend] + Mike', goal: 'Four moves (Map, Design, Implement, Run) sold as packages with fixed fees where possible.', log: [['Oct 24', 'Draft structure set: Map two to four weeks, then Design, Implement, Run. Prices to set.']] },
+          { n: '03', t: 'Go to market', own: 'All three', goal: 'Three first conversations from people we already know, then a referral loop.', log: [['Oct 24', 'Start with warm introductions. No website needed before the first three conversations.']] },
+          { n: '04', t: 'The delivery system', own: 'Mike', goal: 'This hub for ourselves, and a client hub template we stand up on day one of every engagement: roadmap, Work Station, decisions log, measurement.', log: [['Oct 24', 'Hub baseline built on the GWC pattern: static pages on Vercel, a token-protected store on Railway, shared Work Station state. Deploy steps in the README.']] },
+          { n: '05', t: 'First engagements', own: 'All three', goal: 'Three paid Maps delivered, each turning into a Design or Implementation.', log: [] }
+        ];
+        var now = new Date(), months = [];
+        for (var m = 0; m < 6; m++) { var d = new Date(now.getFullYear(), now.getMonth() + m, 1); months.push('<div class="' + (m === 0 ? 'now' : '') + '">' + d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' }) + '</div>'); }
+        document.getElementById('tl').innerHTML = months.join('');
+        document.getElementById('inits').innerHTML = INITS.map(function (x) {
+          return '<div class="init"><div class="hd"><div><div class="num">Initiative ' + x.n + '</div><h2>' + esc(x.t) + '</h2></div><div class="own">Owner: ' + esc(x.own) + '</div></div><div class="goal">' + esc(x.goal) + '</div><div class="lh">Updates</div>' + (x.log.length ? x.log.map(function (l) { return '<div class="u"><span class="dt">' + esc(l[0]) + '</span>' + esc(l[1]) + '</div>'; }).join('') : '<div class="u" style="color:var(--muted)">Nothing yet.</div>') + '</div>';
+        }).join('');
+
+        window.showView = function (v) {
+          document.body.classList.remove('view-ws', 'view-rm'); document.body.classList.add('view-' + v);
+          document.getElementById('tab-ws').classList.toggle('on', v === 'ws'); document.getElementById('tab-rm').classList.toggle('on', v === 'rm');
+          try { history.replaceState(null, '', v === 'rm' ? '#roadmap' : '#workstation'); } catch (e) {}
+        };
+        showView(location.hash === '#roadmap' ? 'rm' : 'ws');
+        window.addEventListener('hashchange', function () { showView(location.hash === '#roadmap' ? 'rm' : 'ws'); });
+      })();
+    </script>
+  </body>
+</html>
