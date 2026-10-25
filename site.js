@@ -10,8 +10,8 @@ window.SITE = {
   password: "newco",                   // roadmap + Work Station gate (lowercase; the gate ignores case)
   hubUrl: "",                          // the Vercel URL once deployed, e.g. https://newco-hub.vercel.app
   people: [
-    { name: "Mike FitzGerald", role: "Co-founder", focus: "Operations, clinical and AI implementation", email: "" },
-    { name: "[Brother]", role: "Co-founder", focus: "[What he brings]", email: "" },
+    { name: "Pat Fitzgerald", role: "Founder", focus: "Business transformation: matching market dynamics to new technology. Built in the mortgage industry, now doing the same at TaylorMade.", email: "" },
+    { name: "Mike FitzGerald", role: "Co-founder", focus: "Operating systems for a business: the hub, the cadence, and AI implementation inside real workflows. Physician and clinic operator.", email: "" },
     { name: "[Friend]", role: "Co-founder", focus: "[What they bring]", email: "" }
   ],
   pillars: [
