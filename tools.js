@@ -13,6 +13,7 @@
  *   source      "claude" | "manual" | "other"
  */
 window.INVENTORY = [
+  { id: "vision", name: "The vision", description: "The idea (sistering), who it is for, the five moves of an engagement, why us, year one, and the decisions still open.", capability: "strategy", kind: "document", status: "live", audience: ["founders"], url: "vision.html", source: "claude" },
   { id: "roadmap", name: "Roadmap & Work Station", description: "Where the company is going, who owns what, and the shared checklist of what is due now.", capability: "strategy", kind: "tool", status: "live", audience: ["founders"], url: "roadmap.html", source: "claude" },
   { id: "operating-model", name: "Operating model", description: "How we run engagements: the architecture map, the AI implementation playbook, the transformation cadence.", capability: "delivery", kind: "document", status: "in-flight", audience: ["founders","team"], url: "", source: "claude" },
   { id: "offer", name: "Offer & pricing", description: "What we sell, in what packages, at what price, and how an engagement is scoped.", capability: "sales", kind: "document", status: "in-flight", audience: ["founders"], url: "", source: "claude" },
