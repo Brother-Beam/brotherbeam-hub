@@ -4,137 +4,63 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>Work Hub</title>
+    <title>Brother Beam &middot; Hub</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="stylesheet" href="brand.css" />
-    <script src="site.js"></script>
-    <script src="tools.js"></script>
     <style>
-      .hero { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; align-items: end; margin-top: 10px; }
-      .now { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
-      .now .k { font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--accent-ink); }
-      .now ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: var(--ink); }
-      .people .card .t { font-size: 16px; }
-      @media (max-width: 760px) { .hero { grid-template-columns: 1fr; } }
-      .plug ol, .plug ul { margin: 10px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.65; color: var(--body); }
-      .plug li { margin-bottom: 7px; }
+      .lede { max-width: 42rem; }
+      .lead-btn { margin-top: 18px; }
+      .plug ol { margin: 12px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.65; color: var(--body); }
+      .plug li { margin-bottom: 9px; }
       .plug li b { color: var(--ink); }
+      .plug .card .who { margin-bottom: 2px; }
+      .plug .eg { font-size: 12.5px; color: var(--muted); margin-top: 12px; border-top: 1px solid var(--soft); padding-top: 10px; }
       .plug code { background: var(--soft); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
     </style>
   </head>
   <body>
     <div class="bar">
       <div class="in">
-        <span class="brand"><i></i><span data-site="name">NEWCO</span></span>
-        <span>Work hub &middot; internal</span>
-        <a href="roadmap.html">Roadmap &amp; Work Station &rarr;</a>
+        <span class="brand"><i></i>BROTHER BEAM</span>
+        <span>Internal</span>
       </div>
     </div>
 
     <div class="wrap">
-      <div class="hero">
-        <div>
-          <p class="kick" data-site="fullName">NewCo Advisory</p>
-          <h1 data-site="tagline">Business architecture, with AI built in.</h1>
-          <p class="sub" data-site="what"></p>
-        </div>
-        <div class="now">
-          <div class="k">This week</div>
-          <ul id="now-list"><li>Read the vision and mark up what is wrong.</li><li>Answer the six decisions at the bottom of it.</li><li>Then buy the domain.</li></ul>
-        </div>
+      <div class="lede">
+        <p class="kick">Brother Beam &middot; internal</p>
+        <h1>Start here.</h1>
+        <p class="sub">Two things for now: see the model, and get your own Claude connected so you can build. Everything you make goes live for all three of us.</p>
+        <a class="btn solid lead-btn" href="model.html">See the model &rarr;</a>
       </div>
 
-      <div class="sec plug" id="plug-in">
-        <div class="sec-h"><span class="rule"></span><div><h2>New here? Plug in.</h2><div class="s">Two minutes to connect your own Claude to the company. After that, everything here is yours to use and change, no code required.</div></div></div>
+      <div class="sec plug">
+        <div class="sec-h"><span class="rule"></span><div><h2>Plug in and build</h2><div class="s">No code. You talk, your Claude builds.</div></div></div>
         <div class="grid g2">
           <div class="card">
-            <div class="who">Connect your Claude</div>
-            <div class="t">Three steps, no code</div>
+            <div class="who">1 &middot; Connect your Claude</div>
             <ol>
               <li><b>Accept the GitHub invite.</b> Go to <a href="https://github.com/Brother-Beam">github.com/Brother-Beam</a>, sign in, and click Join. It is also waiting in your email.</li>
               <li><b>Open the hub in Claude.</b> Go to <a href="https://claude.ai/code">claude.ai/code</a>, connect GitHub when it asks, and open the <b>brotherbeam-hub</b> project.</li>
-              <li><b>Just talk to it.</b> It already knows the whole company and writes all the code. Ask it to show you a page, change something, or build what you need.</li>
+              <li><b>Say hello.</b> It already knows the whole company. Ask it anything about Brother Beam to get going.</li>
             </ol>
           </div>
           <div class="card">
-            <div class="who">How to use this hub</div>
-            <div class="t">What is here</div>
-            <ul>
-              <li><b><a href="model.html">The model</a>.</b> How we make money, on one page.</li>
-              <li><b><a href="vision.html">The vision</a>.</b> The full picture, in visuals.</li>
-              <li><b><a href="roadmap.html">Roadmap &amp; Work Station</a>.</b> What is due now, with status everyone sees, and where we are going. Password: <code>beam</code>.</li>
-              <li><b>It is shared.</b> Everything you change here saves for all three of us, live.</li>
-            </ul>
+            <div class="who">2 &middot; Build with it</div>
+            <ol>
+              <li><b>Say what you want.</b> In plain words: &ldquo;Make a page for our pricing,&rdquo; or &ldquo;Add our three target industries to the model page.&rdquo;</li>
+              <li><b>See it first.</b> Your Claude builds it and shows you before anything goes out.</li>
+              <li><b>Publish.</b> Tell it to publish and the page is live on the hub for all of us in about a minute.</li>
+            </ol>
+            <p class="eg">That is how this whole hub was built. You never touch code.</p>
           </div>
         </div>
       </div>
 
-      <div class="sec">
-        <div class="banner">
-          <div>
-            <div class="t">Roadmap &amp; Work Station</div>
-            <div class="d">Two tabs on one page. The Work Station is the shared checklist of what is due now, with status everyone sees. The Roadmap is where the company is going, initiative by initiative, with owners, decisions and a running log.</div>
-          </div>
-          <div class="ctas"><a class="btn solid" href="roadmap.html#workstation">Work Station</a><a class="btn" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.4)" href="roadmap.html#roadmap">Roadmap</a></div>
-        </div>
-      </div>
-
-      <div class="sec">
-        <div class="sec-h"><span class="rule"></span><div><h2>What we do</h2><div class="s">Three practice areas. Each one feeds the next.</div></div></div>
-        <div class="grid g3" id="pillars"></div>
-      </div>
-
-      <div class="sec">
-        <div class="sec-h"><span class="rule"></span><div><h2>Most used</h2><div class="s">Everything live or being built, from the inventory. Add a tool by adding a line to tools.js.</div></div></div>
-        <div class="grid g3" id="tools"></div>
-      </div>
-
-      <div class="sec">
-        <div class="sec-h"><span class="rule"></span><div><h2>How an engagement runs</h2><div class="s">The same five moves every time, so clients know what to expect and we know what to build.</div></div></div>
-        <div class="tiles" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr))">
-          <div class="tile" style="border-top-color:var(--good)"><b>0 &middot; Walkthrough</b><p>Free. An hour with the owner. We walk the building and say what we would survey and what we would leave alone.</p></div>
-          <div class="tile"><b>1 &middot; Survey</b><p>Two to four weeks. The structure as built, priced: where value flows, where it leaks.</p></div>
-          <div class="tile"><b>2 &middot; Blueprint</b><p>The target structure, the AI that belongs in it, the order to build, the number it should move.</p></div>
-          <div class="tile"><b>3 &middot; Sistering</b><p>Built beside what works, workflow by workflow, with the client&rsquo;s people trained as we go.</p></div>
-          <div class="tile"><b>4 &middot; Carry</b><p>Ninety days of roadmap, Work Station and cadence, with the before and after measured.</p></div>
-        </div>
-        <a class="card accent" href="vision.html" style="margin-top:12px;display:flex;align-items:center;gap:14px;flex-wrap:wrap"><span class="t">The vision &middot; working draft</span><span class="d" style="margin:0;flex:1">The idea, who it is for, how an engagement runs, why us, year one, and the list of what only the three of us can decide.</span><span class="btn solid">Read it &rarr;</span></a>
-      </div>
-
-      <div class="sec people">
-        <div class="sec-h"><span class="rule"></span><div><h2>People</h2><div class="s">Who does what, and how to reach them.</div></div></div>
-        <div class="grid g3" id="people"></div>
-      </div>
-
-      <div class="sec">
-        <div class="sec-h"><span class="rule"></span><div><h2>By role</h2><div class="s">Collapsed shelves for each audience. Fill them in as the tools land.</div></div></div>
-        <details class="shelf"><summary>Founders</summary><div class="in"><p style="font-size:13px">Roadmap, Work Station, offer and pricing, proposal desk, finances.</p></div></details>
-        <details class="shelf"><summary>Delivery team</summary><div class="in"><p style="font-size:13px">Operating model, client hub template, playbooks, templates.</p></div></details>
-        <details class="shelf"><summary>Clients</summary><div class="in"><p style="font-size:13px">Each client gets their own hub from the template. Nothing internal lives there.</p></div></details>
-      </div>
-
-      <p class="foot"><span><b data-site="fullName">NewCo Advisory</b> &middot; internal work hub</span><span>Built on the same pattern as the GWC hub: static pages on Vercel, shared state through a small API on Railway.</span></p>
+      <p class="foot"><span><b>Brother Beam</b> &middot; internal hub</span><span>You talk, your Claude builds. Everything here is shared.</span></p>
     </div>
-
-    <script>
-      (function () {
-        var S = window.SITE || {};
-        document.title = (S.name || 'Hub') + ' · Work Hub';
-        document.querySelectorAll('[data-site]').forEach(function (el) { var v = S[el.dataset.site]; if (v) el.textContent = v; });
-        var esc = function (x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
-        document.getElementById('pillars').innerHTML = (S.pillars || []).map(function (p, i) { return '<div class="card' + (i === 1 ? ' dark' : '') + '"><div class="who">0' + (i + 1) + '</div><div class="t">' + esc(p.t) + '</div><div class="d">' + esc(p.d) + '</div></div>'; }).join('');
-        var inv = (window.INVENTORY || []).filter(function (t) { return t.status !== 'reference' || t.url; });
-        document.getElementById('tools').innerHTML = inv.map(function (t) {
-          var pill = t.status === 'live' ? '<span class="pill live">Live</span>' : t.status === 'in-flight' ? '<span class="pill build">Building</span>' : '<span class="pill ref">Reference</span>';
-          var open = t.url ? '<a class="card" href="' + esc(t.url) + '">' : '<div class="card" style="opacity:.75">';
-          var close = t.url ? '</a>' : '</div>';
-          return open + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="t">' + esc(t.name) + '</div>' + pill + '</div><div class="d">' + esc(t.description) + '</div>' + close;
-        }).join('');
-        document.getElementById('people').innerHTML = (S.people || []).map(function (p) { return '<div class="card"><div class="t">' + esc(p.name) + '</div><div class="who">' + esc(p.role) + '</div><div class="d">' + esc(p.focus || '') + (p.email ? '<br><a href="mailto:' + esc(p.email) + '">' + esc(p.email) + '</a>' : '') + '</div></div>'; }).join('');
-      })();
-    </script>
   </body>
 </html>
