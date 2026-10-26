@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Brother Beam &middot; The Model</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <style>
+      /* One geometric face (Jost) carries the whole page. Hierarchy is weight, tracking and air.
+         Layout: an architectural descent -- a thin ladder you walk down to the first customer. */
+      :root {
+        --paper: #F3F5F7;
+        --surface: #FFFFFF;
+        --ink: #141B22;
+        --muted: #5A6775;
+        --faint: #98A4B0;
+        --line: #DDE3E9;
+        --hair: #EAEEF2;
+        --accent: #1F5EFF;   /* Nate */
+        --good: #0FA37F;     /* Pat */
+        --ochre: #B7791F;    /* Mike */
+        --shadow: 0 1px 2px rgba(20,27,34,.04), 0 18px 40px -18px rgba(20,27,34,.13);
+        --font: "Jost", "Futura", "Century Gothic", "Avenir Next", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body {
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--font);
+        font-weight: 400;
+        line-height: 1.6;
+        letter-spacing: .005em;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      /* top bar, matching the hub */
+      .bar { background: var(--ink); color: rgba(255,255,255,.72); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; }
+      .bar .in { max-width: 680px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+        padding: 11px max(16px, env(safe-area-inset-right, 0px)) 11px max(16px, env(safe-area-inset-left, 0px)); }
+      .bar a { color: inherit; text-decoration: none; font-weight: 500; }
+      .bar .brand { display: flex; align-items: center; gap: 8px; color: #fff; font-weight: 400; letter-spacing: .24em; }
+      .bar .brand i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
+
+      .wrap {
+        max-width: 680px; margin: 0 auto;
+        padding-left: max(20px, env(safe-area-inset-left, 0px));
+        padding-right: max(20px, env(safe-area-inset-right, 0px));
+        padding-block: 44px 56px;
+      }
+
+      .label { font-size: 11px; font-weight: 500; letter-spacing: .34em; text-transform: uppercase; color: var(--faint); margin: 0; }
+
+      .hero { text-align: center; padding-block: 18px 8px; }
+      .hero .label { margin-bottom: 26px; }
+      h1 { margin: 0; font-weight: 300; font-size: clamp(33px, 11vw, 62px); letter-spacing: .16em; line-height: 1.08; text-transform: uppercase; text-indent: .16em; }
+      .rule-c { width: 54px; height: 1px; background: var(--ink); opacity: .35; margin: 24px auto; }
+      .tagline { font-weight: 300; font-size: clamp(17px, 4.6vw, 23px); letter-spacing: .01em; margin: 0 auto; max-width: 24ch; text-wrap: balance; }
+      .lede { color: var(--muted); font-size: 15px; font-weight: 400; margin: 18px auto 0; max-width: 52ch; text-wrap: pretty; }
+
+      .section { margin-top: 64px; }
+      .sec-h { text-align: center; margin-bottom: 30px; }
+      .sec-h .label { margin-bottom: 12px; }
+      h2 { font-weight: 300; font-size: clamp(24px, 6vw, 33px); letter-spacing: .04em; margin: 0; text-wrap: balance; color: var(--ink); }
+      .sub { color: var(--muted); font-size: 14.5px; margin: 10px auto 0; max-width: 46ch; text-align: center; text-wrap: pretty; }
+
+      .story { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; box-shadow: var(--shadow); padding: 30px 28px; }
+      .beamfig { width: 100%; max-width: 440px; height: auto; display: block; margin: 0 auto 26px; }
+      .twomeans { display: grid; gap: 26px; grid-template-columns: 1fr 1fr; }
+      .mean .k { font-size: 11px; font-weight: 500; letter-spacing: .24em; text-transform: uppercase; color: var(--ink); margin: 0 0 8px; }
+      .mean p { margin: 0; font-size: 14.5px; color: var(--muted); }
+      @media (max-width: 540px) { .twomeans { grid-template-columns: 1fr; gap: 22px; } }
+
+      .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 26px; justify-content: center; }
+      .btn { font: inherit; font-weight: 500; font-size: 12.5px; letter-spacing: .14em; text-transform: uppercase; border: 0; border-radius: 999px; padding: 13px 26px; cursor: pointer; background: var(--ink); color: var(--paper); transition: opacity .2s ease, transform .1s ease; }
+      .btn:hover { opacity: .88; }
+      .btn:active { transform: translateY(1px); }
+      .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+      .btn:focus-visible, .step:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+      .progress { font-size: 11px; font-weight: 500; letter-spacing: .22em; text-transform: uppercase; color: var(--faint); width: 100%; text-align: center; }
+
+      .board { display: flex; flex-direction: column; }
+      .step { display: grid; grid-template-columns: 44px 1fr; gap: 18px; position: relative; cursor: pointer; padding: 9px 0; -webkit-tap-highlight-color: transparent; }
+      .rail { position: relative; display: flex; justify-content: center; }
+      .rail::before, .rail::after { content: ""; position: absolute; left: 50%; width: 0; transform: translateX(-50%); border-left: 1px dashed var(--line); }
+      .rail::before { top: 0; height: 24px; }
+      .rail::after { top: 24px; bottom: -18px; }
+      .step:first-child .rail::before { display: none; }
+      .step.goal .rail::after { display: none; }
+      .node { position: relative; z-index: 2; width: 36px; height: 36px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; background: var(--surface); border: 1px solid var(--c, var(--line)); color: var(--c, var(--muted)); font-weight: 400; font-size: 14px; letter-spacing: .02em; transition: transform .3s ease, box-shadow .3s ease, background .3s ease, color .3s ease; }
+      .card { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 15px 18px; min-width: 0; transition: border-color .3s ease, box-shadow .3s ease; }
+      .chip { display: inline-block; font-size: 10px; font-weight: 500; letter-spacing: .18em; text-transform: uppercase; color: var(--c, var(--muted)); margin-bottom: 8px; }
+      .chip::before { content: ""; display: inline-block; width: 12px; height: 1px; background: currentColor; vertical-align: middle; margin-right: 7px; margin-bottom: 2px; }
+      .step h3 { font-size: 17px; font-weight: 500; letter-spacing: .01em; margin: 0; color: var(--ink); }
+      .step p { margin: 7px 0 0; font-size: 13.8px; color: var(--muted); }
+
+      .step.active .node { background: var(--c, var(--accent)); color: #fff; transform: scale(1.14); box-shadow: 0 0 0 6px color-mix(in srgb, var(--c, var(--accent)) 16%, transparent); }
+      .step.active .card { border-color: color-mix(in srgb, var(--c, var(--accent)) 50%, var(--line)); box-shadow: var(--shadow); }
+      .step .pawn { position: absolute; z-index: 3; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0); font-size: 12px; color: #fff; transition: transform .22s ease; pointer-events: none; }
+      .step.active .pawn { transform: translate(-50%, -50%) scale(1); }
+
+      .step.goal { --c: var(--good); }
+      .step.goal .node { width: 42px; height: 42px; font-size: 16px; }
+      .step.goal .card { background: color-mix(in srgb, var(--good) 6%, var(--surface)); border-color: color-mix(in srgb, var(--good) 34%, var(--line)); }
+      .step.goal h3 { font-size: 18px; }
+      .step.goal.lit .node { background: var(--good); color: #fff; box-shadow: 0 0 0 8px color-mix(in srgb, var(--good) 18%, transparent); }
+      .step.goal.lit .card { box-shadow: 0 0 0 1px color-mix(in srgb, var(--good) 30%, transparent), var(--shadow); }
+
+      .deliver { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; box-shadow: var(--shadow); padding: 26px 28px; }
+      .deliver ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+      .deliver li { display: grid; grid-template-columns: 20px 1fr; gap: 14px; align-items: start; font-size: 14.5px; }
+      .deliver li:not(:last-child) { padding-bottom: 18px; border-bottom: 1px solid var(--hair); }
+      .deliver li .tick { color: var(--good); font-size: 13px; margin-top: 3px; }
+      .deliver li strong { font-weight: 500; color: var(--ink); }
+      .deliver li span:last-child { color: var(--muted); }
+
+      .people { display: grid; gap: 16px; grid-template-columns: repeat(3, 1fr); }
+      @media (max-width: 620px) { .people { grid-template-columns: 1fr; } }
+      .person { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; box-shadow: var(--shadow); padding: 20px 18px; }
+      .person .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); display: inline-block; margin-bottom: 14px; }
+      .person .nm { font-size: 22px; font-weight: 300; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); }
+      .person .role { font-size: 10.5px; font-weight: 500; letter-spacing: .2em; text-transform: uppercase; color: var(--c); margin: 4px 0 12px; }
+      .person p { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+      .scale { background: var(--ink); border-radius: 4px; padding: 40px 30px; text-align: center; }
+      .scale .label { color: color-mix(in srgb, #fff 55%, transparent); margin-bottom: 14px; }
+      .scale h2 { color: #fff; }
+      .scale p { color: color-mix(in srgb, #fff 72%, transparent); font-size: 15px; margin: 16px auto 0; max-width: 46ch; }
+
+      .foot { margin-top: 48px; text-align: center; }
+      .foot .label { color: var(--faint); }
+
+      @media (prefers-reduced-motion: reduce) { .node, .card, .step .pawn, .btn { transition: none; } }
+    </style>
+  </head>
+  <body>
+    <div class="bar">
+      <div class="in">
+        <a href="index.html">&larr; Hub</a>
+        <span>Internal &middot; the model</span>
+        <span class="brand"><i></i>BROTHER BEAM</span>
+      </div>
+    </div>
+
+    <div class="wrap">
+
+      <header class="hero">
+        <p class="label">Internal &middot; how we work</p>
+        <h1>Brother&nbsp;Beam</h1>
+        <div class="rule-c"></div>
+        <p class="tagline">We strengthen businesses that already work.</p>
+        <p class="lede">We use relationships we already have to reach profitable companies whose market moved, then re-architect the business with AI built in. Here is the whole model on one page, and the first customer it is pointed at.</p>
+      </header>
+
+      <section class="section">
+        <div class="sec-h"><p class="label">The name</p><h2>Why Brother Beam</h2></div>
+        <div class="story">
+          <svg class="beamfig" viewBox="0 0 640 150" role="img" aria-label="An original beam with a second brother beam bolted alongside it, sharing the load.">
+            <g fill="none" stroke="var(--faint)" stroke-width="1.5" opacity="0.9">
+              <path d="M120 8 v22 M114 24 l6 6 6-6"/>
+              <path d="M320 8 v22 M314 24 l6 6 6-6"/>
+              <path d="M520 8 v22 M514 24 l6 6 6-6"/>
+            </g>
+            <rect x="40" y="50" width="560" height="26" rx="2" fill="none" stroke="var(--muted)" stroke-width="1.75"/>
+            <rect x="40" y="80" width="560" height="26" rx="2" fill="color-mix(in srgb, var(--accent) 10%, transparent)" stroke="var(--accent)" stroke-width="1.75"/>
+            <g fill="var(--accent)">
+              <circle cx="110" cy="79" r="4"/><circle cx="250" cy="79" r="4"/><circle cx="390" cy="79" r="4"/><circle cx="530" cy="79" r="4"/>
+            </g>
+            <g stroke="var(--faint)" stroke-width="1.5" opacity="0.7">
+              <path d="M52 106 v30 M60 106 v30"/>
+              <path d="M580 106 v30 M588 106 v30"/>
+            </g>
+          </svg>
+          <div class="twomeans">
+            <div class="mean">
+              <p class="k">The beam</p>
+              <p>When a beam has to carry more than it was built for, a builder does not tear it out. He bolts a second beam, a brother, right alongside it. The first beam keeps carrying. The new one shares the load. That is what we do to a business: keep what works, and build the new structure, AI included, beside it.</p>
+            </div>
+            <div class="mean">
+              <p class="k">The brothers</p>
+              <p>Pat and Mike are brothers. The company is built the way you rebuild for family: keep what is good, make it stronger, and stay until the load holds. Nate rounds out the three.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="sec-h"><p class="label">The model, step by step</p><h2>From a handshake to a customer served</h2>
+          <p class="sub">Walk down the ladder one rung at a time, or tap any step. It is all on the page already.</p>
+        </div>
+        <div class="controls">
+          <button class="btn" id="walk" type="button">Walk it</button>
+          <button class="btn ghost" id="reset" type="button">Start over</button>
+          <span class="progress" id="prog">Step 1 of 6</span>
+        </div>
+        <div class="board" id="board"></div>
+      </section>
+
+      <section class="section">
+        <div class="sec-h"><p class="label">The first customer</p><h2>What they get for the money</h2>
+          <p class="sub">One business, measurably stronger. This is what lands on their side of the table.</p>
+        </div>
+        <div class="deliver">
+          <ul>
+            <li><span class="tick">&#10022;</span><span><strong>A measured picture of the business as built</strong> &mdash; where the value really flows, and where it leaks.</span></li>
+            <li><span class="tick">&#10022;</span><span><strong>A blueprint</strong> &mdash; the target structure with AI built into it, and the order to build it.</span></li>
+            <li><span class="tick">&#10022;</span><span><strong>Working AI sistered into real workflows</strong> &mdash; beside what already works, with their people trained to run it.</span></li>
+            <li><span class="tick">&#10022;</span><span><strong>An operating system they keep</strong> &mdash; a roadmap, a Work Station, and a weekly cadence that outlast us.</span></li>
+            <li><span class="tick">&#10022;</span><span><strong>One number moved</strong> &mdash; measured before and after, so the value is a fact, not a story.</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="sec-h"><p class="label">Who does what</p><h2>Three chairs, one build</h2></div>
+        <div class="people">
+          <div class="person" style="--c: var(--accent)">
+            <span class="dot"></span>
+            <div class="nm">Nate</div>
+            <div class="role">Deals &amp; relationships</div>
+            <p>Opens the doors, shapes the deal, and runs the money: financials, settlement, the business model, and the business development that brings the next customer.</p>
+          </div>
+          <div class="person" style="--c: var(--good)">
+            <span class="dot"></span>
+            <div class="nm">Pat</div>
+            <div class="role">Transformation</div>
+            <p>Performs the work. He re-architects the business and builds the AI in beside the workflows that already carry the load.</p>
+          </div>
+          <div class="person" style="--c: var(--ochre)">
+            <span class="dot"></span>
+            <div class="nm">Mike</div>
+            <div class="role">The operating system</div>
+            <p>Runs the change and the measurement, with AI inside the daily work, so the result holds after we step back.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="scale">
+          <p class="label">Start small, built to scale</p>
+          <h2>Give one customer a lot. Then grow.</h2>
+          <p>We are building a company that can get large. The way there is the opposite of rushing: give the first customer so much value that the result sells the next one for us. One strong beam at a time, and the referrals compound.</p>
+        </div>
+      </section>
+
+      <p class="foot"><span class="label">Brother Beam &middot; the model on one page</span></p>
+
+    </div>
+
+    <script>
+      (function () {
+        var steps = [
+          { who: 'Nate', key: 'accent', t: 'Start with a relationship', d: 'We already know owners of profitable, established companies. Every job starts from trust, not a cold call.' },
+          { who: 'Nate', key: 'accent', t: 'Find the right business', d: 'Good bones, but the market moved. The company works; it needs AI and a new structure to carry what is next.' },
+          { who: 'Nate + Pat', key: 'accent', t: 'The free Walkthrough', d: 'One hour with the owner. We walk the business and say what we would strengthen and what we would leave alone.' },
+          { who: 'Nate', key: 'accent', t: 'Shape the deal', d: 'Scope, price and terms, with the financials and the business model handled. A number at the start, the same number at the end.' },
+          { who: 'Pat', key: 'good', t: 'Do the transformation', d: 'Survey the business as built, draw the blueprint, then sister AI beside the workflows that carry the load, one at a time.' },
+          { who: 'Mike', key: 'ochre', t: 'Run it and prove it', d: 'The operating system runs the change for ninety days: roadmap, Work Station, weekly cadence, and the number measured before and after.' }
+        ];
+        var goal = { t: 'First customer, value delivered', d: 'A real business, measurably stronger. That is the whole goal right now: give one customer a lot of value, and let the result speak.' };
+
+        var board = document.getElementById('board');
+        var prog = document.getElementById('prog');
+        var walkBtn = document.getElementById('walk');
+        var resetBtn = document.getElementById('reset');
+        var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        var nodes = [];
+        var total = steps.length;
+
+        function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]; }); }
+
+        steps.forEach(function (s, i) {
+          var el = document.createElement('div');
+          el.className = 'step';
+          el.style.setProperty('--c', 'var(--' + s.key + ')');
+          el.setAttribute('tabindex', '0');
+          el.setAttribute('role', 'button');
+          el.setAttribute('aria-label', 'Step ' + (i + 1) + ': ' + s.t);
+          el.innerHTML =
+            '<div class="rail"><span class="node">' + (i + 1) + '</span><span class="pawn" aria-hidden="true">&#9679;</span></div>' +
+            '<div class="card"><span class="chip">' + esc(s.who) + '</span><h3>' + esc(s.t) + '</h3><p>' + esc(s.d) + '</p></div>';
+          board.appendChild(el);
+          nodes.push(el);
+        });
+
+        var g = document.createElement('div');
+        g.className = 'step goal';
+        g.setAttribute('tabindex', '0');
+        g.setAttribute('role', 'button');
+        g.setAttribute('aria-label', 'Goal: ' + goal.t);
+        g.innerHTML =
+          '<div class="rail"><span class="node">&#9733;</span><span class="pawn" aria-hidden="true">&#9679;</span></div>' +
+          '<div class="card"><span class="chip">The goal</span><h3>' + esc(goal.t) + '</h3><p>' + esc(goal.d) + '</p></div>';
+        board.appendChild(g);
+        nodes.push(g);
+
+        var current = 0;
+
+        function setActive(i, scroll) {
+          current = i;
+          nodes.forEach(function (n, k) { n.classList.toggle('active', k === i); });
+          g.classList.toggle('lit', i >= total);
+          if (i >= total) {
+            prog.textContent = 'Customer served';
+            walkBtn.textContent = 'Walk it again';
+          } else {
+            prog.textContent = 'Step ' + (i + 1) + ' of ' + total;
+            walkBtn.textContent = i === 0 ? 'Walk it' : 'Next step';
+          }
+          if (scroll) {
+            try { nodes[i].scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' }); } catch (e) {}
+          }
+        }
+
+        walkBtn.addEventListener('click', function () { setActive(current >= total ? 0 : current + 1, true); });
+        resetBtn.addEventListener('click', function () { setActive(0, true); });
+        nodes.forEach(function (n, i) {
+          function go() { setActive(i, true); }
+          n.addEventListener('click', go);
+          n.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+        });
+
+        setActive(0, false);
+      })();
+    </script>
+  </body>
+</html>

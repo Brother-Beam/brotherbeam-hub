@@ -13,6 +13,7 @@
  *   source      "claude" | "manual" | "other"
  */
 window.INVENTORY = [
+  { id: "model", name: "The model", description: "How we work on one page: the business model as a walk from the first relationship to the first customer, the name story, and who does what.", capability: "strategy", kind: "document", status: "live", audience: ["founders"], url: "model.html", source: "claude" },
   { id: "vision", name: "The vision", description: "The idea (sistering), who it is for, the five moves of an engagement, why us, year one, and the decisions still open.", capability: "strategy", kind: "document", status: "live", audience: ["founders"], url: "vision.html", source: "claude" },
   { id: "roadmap", name: "Roadmap & Work Station", description: "Where the company is going, who owns what, and the shared checklist of what is due now.", capability: "strategy", kind: "tool", status: "live", audience: ["founders"], url: "roadmap.html", source: "claude" },
   { id: "operating-model", name: "Operating model", description: "How we run engagements: the architecture map, the AI implementation playbook, the transformation cadence.", capability: "delivery", kind: "document", status: "in-flight", audience: ["founders","team"], url: "", source: "claude" },
