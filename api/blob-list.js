@@ -1,9 +1,8 @@
-// Lists the files in the Blob store, newest first. Gated by the hub password.
+// Lists the files in the Blob store, newest first. Open (no password).
 // Plain Node function. Uses BLOB_READ_WRITE_TOKEN from the environment.
 import { list } from '@vercel/blob';
 
 export default async function handler(req, res) {
-  if (String((req.query && req.query.pw) || '').toLowerCase() !== 'beam') { res.status(401).json({ error: 'unauthorized' }); return; }
   try {
     const { blobs } = await list();
     const files = blobs

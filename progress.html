@@ -76,18 +76,7 @@
       @media (max-width:680px) { .item { grid-template-columns:1fr; } }
     </style>
   </head>
-  <body class="locked">
-    <div class="gate" id="gate">
-      <form id="gate-form" autocomplete="off">
-        <div class="brand">Brother Beam</div>
-        <p class="k">Internal &middot; Progress</p>
-        <label for="pw">Password</label>
-        <input id="pw" type="password" autocomplete="off" autofocus />
-        <button type="submit">Open</button>
-        <p class="err" id="err"></p>
-      </form>
-    </div>
-
+  <body>
     <div class="bar">
       <div class="in">
         <span class="brand"><i></i>BROTHER BEAM</span>
@@ -96,6 +85,7 @@
           <a href="documents.html">Repository</a>
           <a href="progress.html" class="on">Progress</a>
           <a href="meetings.html">Meetings</a>
+          <a href="guide.html">Guide</a>
         </nav>
       </div>
     </div>
@@ -130,17 +120,7 @@
 
     <script>
       (function () {
-        var PW = 'beam', GKEY = 'bb-progress-gate';
-        var ok = false; try { ok = localStorage.getItem(GKEY) === 'ok'; } catch (e) {}
-        function unlock() { document.body.classList.remove('locked'); var g = document.getElementById('gate'); if (g) g.remove(); start(); }
-        if (ok) { unlock(); } else {
-          document.getElementById('gate-form').addEventListener('submit', function (ev) {
-            ev.preventDefault();
-            var v = (document.getElementById('pw').value || '').trim().toLowerCase();
-            if (v === PW) { try { localStorage.setItem(GKEY, 'ok'); } catch (e) {} unlock(); }
-            else { document.getElementById('err').textContent = 'That is not it.'; document.getElementById('pw').select(); }
-          });
-        }
+        start();
 
         function start() {
           // ===== The roadmap: current deliverable, then what comes after =====

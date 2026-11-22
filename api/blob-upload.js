@@ -2,7 +2,7 @@
 // straight to Vercel Blob (so large files like decks skip the serverless
 // body limit). Plain Node function (not edge). Needs BLOB_READ_WRITE_TOKEN,
 // added when the Blob store is linked with the read-write token checkbox.
-// Gated: the client must send the hub password in clientPayload.
+// Open (no password).
 import { handleUpload } from '@vercel/blob/client';
 
 export default async function handler(req, res) {
@@ -12,10 +12,7 @@ export default async function handler(req, res) {
     const json = await handleUpload({
       body,
       request: req,
-      onBeforeGenerateToken: async (pathname, clientPayload) => {
-        let pw = '';
-        try { pw = String(JSON.parse(clientPayload || '{}').pw || '').toLowerCase(); } catch (e) {}
-        if (pw !== 'beam') throw new Error('unauthorized');
+      onBeforeGenerateToken: async () => {
         return { addRandomSuffix: true, maximumSizeInBytes: 50 * 1024 * 1024 };
       },
     });

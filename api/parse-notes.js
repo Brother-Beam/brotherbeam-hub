@@ -1,7 +1,7 @@
 // Parses pasted AI meeting notes into a consistent structure (a summary,
 // decisions made, and action items with owners) via the Anthropic API.
 // Node function, zero-dependency (global fetch), to keep the Vercel build
-// simple. Needs ANTHROPIC_API_KEY in the environment. Gated by the hub password.
+// simple. Needs ANTHROPIC_API_KEY in the environment. Open (no password).
 
 const SYSTEM = [
   'You extract a structured record from meeting notes for a small advisory firm called Brother Beam.',
@@ -24,7 +24,6 @@ export default async function handler(req, res) {
   const key = process.env.ANTHROPIC_API_KEY || '';
   if (!key) { res.status(503).json({ error: 'parser not configured: set ANTHROPIC_API_KEY on Vercel' }); return; }
   const body = (req.body && typeof req.body === 'object') ? req.body : (function () { try { return JSON.parse(req.body || '{}'); } catch (e) { return {}; } })();
-  if (String(body.pw || '').toLowerCase() !== 'beam') { res.status(401).json({ error: 'unauthorized' }); return; }
   const notes = String(body.notes || '').trim();
   if (!notes) { res.status(400).json({ error: 'no notes' }); return; }
   if (notes.length > 120000) { res.status(413).json({ error: 'notes too long; trim them a little' }); return; }
