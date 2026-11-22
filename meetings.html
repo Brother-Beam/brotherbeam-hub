@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Brother Beam &middot; Meetings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <style>
+      :root {
+        --paper:#F3F5F7; --surface:#FFFFFF; --ink:#141B22; --muted:#5A6775; --faint:#98A4B0;
+        --line:#DDE3E9; --hair:#EAEEF2; --soft:#EEF1F5; --accent:#1F5EFF; --good:#0FA37F; --warn:#B3382C;
+        --shadow:0 1px 2px rgba(20,27,34,.04), 0 18px 40px -18px rgba(20,27,34,.13);
+        --font:"Jost","Futura","Century Gothic","Avenir Next",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+      }
+      * { box-sizing:border-box; }
+      html, body { margin:0; }
+      body { background:var(--paper); color:var(--ink); font-family:var(--font); font-weight:400; line-height:1.55; letter-spacing:.005em; -webkit-font-smoothing:antialiased; }
+      body.locked > *:not(#gate) { display:none; }
+
+      .gate { position:fixed; inset:0; background:var(--ink); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50; }
+      .gate form { width:100%; max-width:340px; background:var(--surface); border-radius:8px; padding:28px 26px; display:flex; flex-direction:column; gap:12px; }
+      .gate .brand { font-weight:400; letter-spacing:.24em; text-transform:uppercase; font-size:15px; }
+      .gate .k { font-size:10px; font-weight:500; letter-spacing:.3em; text-transform:uppercase; color:var(--faint); }
+      .gate label { font-size:11px; font-weight:500; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
+      .gate input { font:inherit; font-size:16px; padding:11px 13px; border:1px solid var(--line); border-radius:6px; }
+      .gate button { font:inherit; font-weight:500; letter-spacing:.14em; text-transform:uppercase; font-size:12px; background:var(--ink); color:#fff; border:0; border-radius:999px; padding:12px; cursor:pointer; }
+      .gate .err { font-size:12px; color:var(--warn); min-height:15px; margin:0; }
+
+      .bar { background:var(--ink); color:rgba(255,255,255,.72); font-size:11px; letter-spacing:.16em; text-transform:uppercase; }
+      .bar .in { max-width:760px; margin:0 auto; display:flex; justify-content:space-between; align-items:center; gap:10px 18px; flex-wrap:wrap; padding:11px max(16px,env(safe-area-inset-right,0px)) 11px max(16px,env(safe-area-inset-left,0px)); }
+      .bar .brand { display:flex; align-items:center; gap:8px; color:#fff; font-weight:400; letter-spacing:.24em; }
+      .bar .brand i { width:8px; height:8px; border-radius:2px; background:var(--accent); display:inline-block; }
+      .nav { display:flex; gap:16px; flex-wrap:wrap; }
+      .nav a { color:rgba(255,255,255,.6); text-decoration:none; font-weight:500; letter-spacing:.14em; }
+      .nav a.on, .nav a:hover { color:#fff; }
+
+      .wrap { max-width:760px; margin:0 auto; padding-left:max(18px,env(safe-area-inset-left,0px)); padding-right:max(18px,env(safe-area-inset-right,0px)); padding-block:36px 60px; }
+      .kick { font-size:11px; font-weight:500; letter-spacing:.3em; text-transform:uppercase; color:var(--faint); margin:0 0 12px; }
+      h1 { font-weight:300; font-size:clamp(30px,7vw,44px); letter-spacing:.04em; margin:0; }
+      .sub { color:var(--muted); font-size:14.5px; margin:12px 0 0; max-width:56ch; }
+      .sync { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); } .sync.err { color:var(--warn); }
+
+      .add { margin-top:26px; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:var(--shadow); padding:18px 20px; display:flex; flex-direction:column; gap:12px; }
+      .add .lab { font-size:10px; font-weight:500; letter-spacing:.2em; text-transform:uppercase; color:var(--faint); margin:0 0 4px; }
+      .add input[type=date], .add input.t, .add textarea { font:inherit; font-size:14px; padding:9px 12px; border:1px solid var(--line); border-radius:6px; width:100%; background:var(--surface); color:var(--ink); }
+      .add textarea { min-height:56px; resize:vertical; }
+      .add .two { display:grid; grid-template-columns:170px 1fr; gap:12px; }
+      .add button { font:inherit; font-weight:500; letter-spacing:.12em; text-transform:uppercase; font-size:12px; background:var(--ink); color:#fff; border:0; border-radius:999px; padding:11px 24px; cursor:pointer; align-self:flex-start; }
+      @media (max-width:620px) { .add .two { grid-template-columns:1fr; } }
+
+      .timeline { margin-top:30px; }
+      .mtg { position:relative; padding:0 0 26px 26px; border-left:1px solid var(--line); margin-left:6px; }
+      .mtg:last-child { border-left-color:transparent; }
+      .mtg::before { content:""; position:absolute; left:-5px; top:3px; width:9px; height:9px; border-radius:50%; background:var(--accent); }
+      .mtg .date { font-size:11px; font-weight:500; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); }
+      .mtg .card { background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:var(--shadow); padding:16px 18px; margin-top:8px; }
+      .mtg .k { font-size:10px; font-weight:500; letter-spacing:.18em; text-transform:uppercase; color:var(--faint); margin:0 0 4px; }
+      .mtg .blk + .blk { margin-top:12px; }
+      .mtg .body { font-size:14px; color:var(--ink); white-space:pre-wrap; }
+      .mtg .by { font-size:11px; color:var(--faint); margin-top:12px; } .mtg .by .rm { color:var(--faint); background:none; border:0; cursor:pointer; font-size:12px; margin-left:8px; } .mtg .by .rm:hover { color:var(--warn); }
+      .empty { color:var(--faint); font-size:13px; padding:10px 0; }
+
+      .foot { margin-top:40px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); }
+    </style>
+  </head>
+  <body class="locked">
+    <div class="gate" id="gate">
+      <form id="gate-form" autocomplete="off">
+        <div class="brand">Brother Beam</div>
+        <p class="k">Internal &middot; Meetings</p>
+        <label for="pw">Password</label>
+        <input id="pw" type="password" autocomplete="off" autofocus />
+        <button type="submit">Open</button>
+        <p class="err" id="err"></p>
+      </form>
+    </div>
+
+    <div class="bar">
+      <div class="in">
+        <span class="brand"><i></i>BROTHER BEAM</span>
+        <nav class="nav">
+          <a href="index.html">Vision</a>
+          <a href="documents.html">Repository</a>
+          <a href="progress.html">Progress</a>
+          <a href="meetings.html" class="on">Meetings</a>
+        </nav>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <p class="kick">Looking back</p>
+      <h1>Meetings</h1>
+      <p class="sub">A record of each time we met: what we covered and the progress we made. A retrospective timeline, so we can see how far we have come and keep ourselves honest on the pace.</p>
+
+      <div class="add">
+        <div>
+          <p class="lab">Log a meeting</p>
+          <div class="two">
+            <input type="date" id="m-date" />
+            <input class="t" id="m-title" placeholder="Short title (optional), e.g. Kickoff" />
+          </div>
+        </div>
+        <div><p class="lab">What we discussed</p><textarea id="m-disc" placeholder="The main things we talked through."></textarea></div>
+        <div><p class="lab">Progress made</p><textarea id="m-prog" placeholder="What moved forward, what was decided, what is now owned by whom."></textarea></div>
+        <button id="add-btn" type="button">Add to the timeline</button>
+      </div>
+
+      <p class="sync" id="sync" style="margin-top:14px">loading&hellip;</p>
+      <div class="timeline" id="timeline"></div>
+
+      <p class="foot">Brother Beam &middot; shared across the three of us</p>
+    </div>
+
+    <script>
+      (function () {
+        var PW = 'beam', GKEY = 'bb-meetings-gate';
+        var ok = false; try { ok = localStorage.getItem(GKEY) === 'ok'; } catch (e) {}
+        function unlock() { document.body.classList.remove('locked'); var g = document.getElementById('gate'); if (g) g.remove(); start(); }
+        if (ok) { unlock(); } else {
+          document.getElementById('gate-form').addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            var v = (document.getElementById('pw').value || '').trim().toLowerCase();
+            if (v === PW) { try { localStorage.setItem(GKEY, 'ok'); } catch (e) {} unlock(); }
+            else { document.getElementById('err').textContent = 'That is not it.'; document.getElementById('pw').select(); }
+          });
+        }
+
+        function start() {
+          var KEY = 'beam-meetings', LKEY = 'bb-meetings-local';
+          var state = { meetings: [] }, online = false, timer = null;
+          var tl = document.getElementById('timeline'), syncEl = document.getElementById('sync');
+          var dateEl = document.getElementById('m-date'), titleEl = document.getElementById('m-title'), discEl = document.getElementById('m-disc'), progEl = document.getElementById('m-prog');
+          try { dateEl.value = new Date().toISOString().slice(0,10); } catch (e) {}
+
+          function esc(x) { return String(x==null?'':x).replace(/[&<>"']/g, function (c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+          function fmtDate(d) { try { var p=String(d).split('-'); return new Date(p[0], p[1]-1, p[2]).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'}); } catch(e){ return esc(d); } }
+
+          function render() {
+            var ms = (state.meetings||[]).slice().sort(function (a,b){ return (b.date||'').localeCompare(a.date||''); });
+            if (!ms.length) { tl.innerHTML = '<div class="empty">No meetings logged yet. Add the first one above.</div>'; return; }
+            tl.innerHTML = ms.map(function (m) {
+              var blocks = '';
+              if (m.disc) blocks += '<div class="blk"><p class="k">Discussed</p><div class="body">'+esc(m.disc)+'</div></div>';
+              if (m.prog) blocks += '<div class="blk"><p class="k">Progress made</p><div class="body">'+esc(m.prog)+'</div></div>';
+              if (!blocks) blocks = '<div class="body" style="color:var(--faint)">No notes.</div>';
+              return '<div class="mtg"><div class="date">'+esc(fmtDate(m.date))+(m.title?' &middot; '+esc(m.title):'')+'</div>'
+                + '<div class="card">'+blocks+'<div class="by">Logged by '+esc(m.by||'someone')+'<button class="rm" data-id="'+esc(m.id)+'">remove</button></div></div></div>';
+            }).join('');
+            tl.querySelectorAll('.rm').forEach(function (b){ b.addEventListener('click', function(){ remove(b.getAttribute('data-id')); }); });
+          }
+          function add() {
+            var disc = (discEl.value||'').trim(), prog = (progEl.value||'').trim();
+            if (!disc && !prog) { discEl.focus(); return; }
+            var nm = ''; try { nm = localStorage.getItem('bb-progress-name') || localStorage.getItem('bb-work-name') || ''; } catch (e) {}
+            state.meetings = (state.meetings||[]).concat([{ id: 'm'+Date.now(), date: dateEl.value || new Date().toISOString().slice(0,10), title:(titleEl.value||'').trim(), disc:disc, prog:prog, by: nm || 'someone', at:new Date().toISOString() }]);
+            titleEl.value=''; discEl.value=''; progEl.value=''; save(); render();
+          }
+          function remove(id) {
+            if (!window.confirm('Remove this meeting from the timeline?')) return;
+            state.meetings = (state.meetings||[]).filter(function (m){ return m.id !== id; }); save(); render();
+          }
+          function save() {
+            try { localStorage.setItem(LKEY, JSON.stringify(state)); } catch (e) {}
+            clearTimeout(timer);
+            timer = setTimeout(function () {
+              timer=null; syncEl.textContent='saving…'; syncEl.className='sync';
+              fetch('/api/tasks?key='+KEY, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({value:state}) })
+                .then(function (r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+                .then(function (){ online=true; syncEl.textContent='saved'; syncEl.className='sync'; })
+                .catch(function (e){ online=false; syncEl.textContent='not saved to shared ('+e.message+')'; syncEl.className='sync err'; });
+            }, 500);
+          }
+          function load() {
+            fetch('/api/tasks?key='+KEY).then(function (r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+              .then(function (j){ online=true; if (j&&j.value&&j.value.meetings){ state={meetings:j.value.meetings}; try{localStorage.setItem(LKEY,JSON.stringify(state));}catch(e){} } syncEl.textContent='shared'; syncEl.className='sync'; render(); })
+              .catch(function (e){ online=false; try{ state=JSON.parse(localStorage.getItem(LKEY))||state; }catch(x){} syncEl.textContent='shared board unreachable ('+e.message+')'; syncEl.className='sync err'; render(); });
+          }
+          document.getElementById('add-btn').addEventListener('click', add);
+          render(); load();
+          setInterval(function(){ if (online && !timer) load(); }, 45000);
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -2,73 +2,142 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>Brother Beam &middot; Hub</title>
+    <title>Brother Beam</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-    <link rel="stylesheet" href="brand.css" />
     <style>
-      .lede { max-width: 42rem; }
-      .lead-btn { margin-top: 18px; }
-      .plug ol { margin: 12px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.65; color: var(--body); }
-      .plug li { margin-bottom: 9px; }
-      .plug li b { color: var(--ink); }
-      .plug .card .who { margin-bottom: 2px; }
-      .plug .eg { font-size: 12.5px; color: var(--muted); margin-top: 12px; border-top: 1px solid var(--soft); padding-top: 10px; }
-      .plug code { background: var(--soft); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+      :root {
+        --paper:#F3F5F7; --surface:#FFFFFF; --ink:#141B22; --muted:#5A6775; --faint:#98A4B0;
+        --line:#DDE3E9; --hair:#EAEEF2; --accent:#1F5EFF; --good:#0FA37F; --ochre:#B7791F;
+        --shadow:0 1px 2px rgba(20,27,34,.04), 0 18px 40px -18px rgba(20,27,34,.13);
+        --font:"Jost","Futura","Century Gothic","Avenir Next",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+      }
+      * { box-sizing:border-box; }
+      html, body { margin:0; }
+      body { background:var(--paper); color:var(--ink); font-family:var(--font); font-weight:400; line-height:1.6; letter-spacing:.005em; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+
+      .bar { background:var(--ink); color:rgba(255,255,255,.72); font-size:11px; letter-spacing:.16em; text-transform:uppercase; }
+      .bar .in { max-width:760px; margin:0 auto; display:flex; justify-content:space-between; align-items:center; gap:10px 18px; flex-wrap:wrap; padding:11px max(16px,env(safe-area-inset-right,0px)) 11px max(16px,env(safe-area-inset-left,0px)); }
+      .bar .brand { display:flex; align-items:center; gap:8px; color:#fff; font-weight:400; letter-spacing:.24em; }
+      .bar .brand i { width:8px; height:8px; border-radius:2px; background:var(--accent); display:inline-block; }
+      .nav { display:flex; gap:16px; flex-wrap:wrap; }
+      .nav a { color:rgba(255,255,255,.6); text-decoration:none; font-weight:500; letter-spacing:.14em; }
+      .nav a.on, .nav a:hover { color:#fff; }
+
+      .wrap { max-width:760px; margin:0 auto; padding-left:max(20px,env(safe-area-inset-left,0px)); padding-right:max(20px,env(safe-area-inset-right,0px)); padding-block:48px 60px; }
+
+      .label { font-size:11px; font-weight:500; letter-spacing:.34em; text-transform:uppercase; color:var(--faint); margin:0; }
+      .hero { text-align:center; padding-block:12px 6px; }
+      .hero .label { margin-bottom:24px; }
+      h1 { margin:0; font-weight:300; font-size:clamp(34px,11vw,62px); letter-spacing:.16em; line-height:1.12; text-transform:uppercase; text-indent:.16em; }
+      .rule-c { width:54px; height:1px; background:var(--ink); opacity:.35; margin:24px auto; }
+      .tagline { font-weight:300; font-size:clamp(18px,4.6vw,24px); letter-spacing:.01em; margin:0 auto; max-width:26ch; text-wrap:balance; }
+      .lede { color:var(--muted); font-size:15.5px; margin:18px auto 0; max-width:54ch; text-wrap:pretty; }
+
+      .section { margin-top:60px; }
+      .sec-h { text-align:center; margin-bottom:28px; }
+      .sec-h .label { margin-bottom:12px; }
+      h2 { font-weight:300; font-size:clamp(24px,6vw,32px); letter-spacing:.04em; margin:0; }
+
+      .three { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+      @media (max-width:640px){ .three { grid-template-columns:1fr; } }
+      .card { background:var(--surface); border:1px solid var(--line); border-top:3px solid var(--c, var(--accent)); border-radius:6px; box-shadow:var(--shadow); padding:22px 20px; }
+      .card .ct { font-size:18px; font-weight:400; letter-spacing:.02em; }
+      .card .cd { font-size:13.5px; color:var(--muted); margin-top:8px; }
+
+      .person { background:var(--surface); border:1px solid var(--line); border-radius:6px; box-shadow:var(--shadow); padding:22px 20px; }
+      .person + .person { margin-top:14px; }
+      .person .hd { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+      .person .nm { font-size:22px; font-weight:300; letter-spacing:.06em; text-transform:uppercase; }
+      .person .role { font-size:10.5px; font-weight:500; letter-spacing:.18em; text-transform:uppercase; color:var(--c); }
+      .person p { margin:10px 0 0; font-size:13.8px; color:var(--muted); }
+
+      .name-story { background:var(--surface); border:1px solid var(--line); border-radius:6px; box-shadow:var(--shadow); padding:24px 26px; }
+      .name-story p { margin:0; font-size:14.5px; color:var(--muted); }
+      .name-story b { color:var(--ink); font-weight:500; }
+
+      .plug { margin-top:56px; border-top:1px solid var(--hair); padding-top:22px; text-align:center; }
+      .plug .label { margin-bottom:8px; }
+      .plug p { font-size:13.5px; color:var(--muted); margin:0 auto; max-width:52ch; }
+      .plug code { background:var(--hair); padding:1px 7px; border-radius:5px; font-size:12.5px; }
+      .plug a { color:var(--accent); text-decoration:none; }
+
+      .foot { margin-top:40px; text-align:center; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); }
     </style>
   </head>
   <body>
     <div class="bar">
       <div class="in">
         <span class="brand"><i></i>BROTHER BEAM</span>
-        <span>Internal</span>
+        <nav class="nav">
+          <a href="index.html" class="on">Vision</a>
+          <a href="documents.html">Repository</a>
+          <a href="progress.html">Progress</a>
+          <a href="meetings.html">Meetings</a>
+        </nav>
       </div>
     </div>
 
     <div class="wrap">
-      <div class="lede">
-        <p class="kick">Brother Beam &middot; internal</p>
-        <h1>Start here.</h1>
-        <p class="sub">Our repository and our shared workspace. See the model, move the work forward together, and get your own Claude connected so you can build.</p>
-      </div>
+      <header class="hero">
+        <p class="label">Advisory &middot; business transformation</p>
+        <h1>Brother Beam</h1>
+        <div class="rule-c"></div>
+        <p class="tagline">We help good businesses navigate their next transformation.</p>
+        <p class="lede">A consultation and advisory agency for the changes that decide a business&rsquo;s next decade: handing it on, bringing in new technology, or growing without breaking what works. Guided by founders who have done it, not just advised on it.</p>
+      </header>
 
-      <div class="sec">
-        <div class="sec-h"><span class="rule"></span><div><h2>The hub</h2><div class="s">Everything in one place.</div></div></div>
-        <div class="grid g3">
-          <a class="card" href="model.html"><div class="t">The model</div><div class="d">How we make money and what we believe, on one page.</div></a>
-          <a class="card" href="work.html"><div class="t">Work Station</div><div class="d">What is due now to reach a first paid engagement, with status we all see. Password: beam.</div></a>
-          <div class="card" style="opacity:.72"><div class="t">Documents</div><div class="d">Our shared repository for decks, resumes, cases and notes. Coming next.</div></div>
-        </div>
-      </div>
-
-      <div class="sec plug">
-        <div class="sec-h"><span class="rule"></span><div><h2>Plug in and build</h2><div class="s">No code. You talk, your Claude builds.</div></div></div>
-        <div class="grid g2">
-          <div class="card">
-            <div class="who">1 &middot; Connect your Claude</div>
-            <ol>
-              <li><b>Accept the GitHub invite.</b> Go to <a href="https://github.com/Brother-Beam">github.com/Brother-Beam</a>, sign in, and click Join. It is also waiting in your email.</li>
-              <li><b>Open the hub in Claude.</b> Go to <a href="https://claude.ai/code">claude.ai/code</a>, connect GitHub when it asks, and open the <b>brotherbeam-hub</b> project.</li>
-              <li><b>Say hello.</b> It already knows the whole company. Ask it anything about Brother Beam to get going.</li>
-            </ol>
+      <section class="section">
+        <div class="sec-h"><p class="label">What we help with</p><h2>Three kinds of transformation</h2></div>
+        <div class="three">
+          <div class="card" style="--c:var(--accent)">
+            <div class="ct">Succession</div>
+            <div class="cd">Handing the business on, or stepping back, without losing what makes it work. The plan, the people, and the systems that let it run without you.</div>
           </div>
-          <div class="card">
-            <div class="who">2 &middot; Build with it</div>
-            <ol>
-              <li><b>Say what you want.</b> In plain words: &ldquo;Make a page for our pricing,&rdquo; or &ldquo;Add our three target industries to the model page.&rdquo;</li>
-              <li><b>See it first.</b> Your Claude builds it and shows you before anything goes out.</li>
-              <li><b>Publish.</b> Tell it to publish and the page is live on the hub for all of us in about a minute.</li>
-            </ol>
-            <p class="eg">That is how this whole hub was built. You never touch code.</p>
+          <div class="card" style="--c:var(--good)">
+            <div class="ct">Technology</div>
+            <div class="cd">Bringing AI and new systems in beside what already works, not ripping it out. What to build, what to buy, what to leave alone, and what it costs to run.</div>
+          </div>
+          <div class="card" style="--c:var(--ochre)">
+            <div class="ct">Scaling</div>
+            <div class="cd">Growing without the business breaking: an operating model, a cadence, and measurement that keep up as the company gets bigger.</div>
           </div>
         </div>
+      </section>
+
+      <section class="section">
+        <div class="sec-h"><p class="label">Who we are</p><h2>Founders who have run it</h2></div>
+        <div class="person" style="--c:var(--accent)">
+          <div class="hd"><div class="nm">Nate</div><div class="role">Commercial &amp; building the business</div></div>
+          <p>Partner number two at Nomad Credit, from pre-revenue to over $100M in annual originations and 120+ people, and its Chief Revenue Officer. Business development, operations, product, and the work of building and running a company.</p>
+        </div>
+        <div class="person" style="--c:var(--good)">
+          <div class="hd"><div class="nm">Pat</div><div class="role">Business architecture &amp; the method</div></div>
+          <p>Nearly eight years at Rocket Mortgage leading program management for the revenue organization, then federal work, now a Business Architect at TaylorMade. He reads how a business actually runs versus how it thinks it runs, and makes the systems it buys change how people work.</p>
+        </div>
+        <div class="person" style="--c:var(--ochre)">
+          <div class="hd"><div class="nm">Mike</div><div class="role">The owner&rsquo;s chair &amp; advisory</div></div>
+          <p>Physician and clinic operator who redesigned his own business and brought AI into it through a sale, then advises health companies on strategy and growth. He has been the client, which is the seat most advisors have never sat in.</p>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="sec-h"><p class="label">The name</p><h2>Why Brother Beam</h2></div>
+        <div class="name-story">
+          <p>When a beam must carry more than it was built for, a builder does not tear it out. He bolts a second beam alongside it. In the trade that move is called <b>sistering</b>. The old beam keeps carrying; the sister shares the load. That is what we do for a business: keep what works, and build the new structure beside it. We made it <b>Brother Beam</b> because of who built it &mdash; brothers, and a friend who was family long before this was a company.</p>
+        </div>
+      </section>
+
+      <div class="plug">
+        <p class="label">Working here</p>
+        <p>Founders: open this hub in your own Claude at <a href="https://claude.ai/code">claude.ai/code</a> (the <code>brotherbeam-hub</code> project) and you can change any page just by asking. The Repository, Progress and Meetings pages share the password <code>beam</code>.</p>
       </div>
 
-      <p class="foot"><span><b>Brother Beam</b> &middot; internal hub</span><span>You talk, your Claude builds. Everything here is shared.</span></p>
+      <p class="foot">Brother Beam &middot; internal hub</p>
     </div>
   </body>
 </html>
