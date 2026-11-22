@@ -12,7 +12,7 @@
     <style>
       :root {
         --paper:#F3F5F7; --surface:#FFFFFF; --ink:#141B22; --muted:#5A6775; --faint:#98A4B0;
-        --line:#DDE3E9; --hair:#EAEEF2; --soft:#EEF1F5; --accent:#1F5EFF; --good:#0FA37F; --warn:#B3382C;
+        --line:#DDE3E9; --hair:#EAEEF2; --soft:#EEF1F5; --accent:#1F5EFF; --good:#0FA37F; --ochre:#B7791F; --warn:#B3382C;
         --shadow:0 1px 2px rgba(20,27,34,.04), 0 18px 40px -18px rgba(20,27,34,.13);
         --font:"Jost","Futura","Century Gothic","Avenir Next",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
       }
@@ -41,29 +41,45 @@
       .wrap { max-width:760px; margin:0 auto; padding-left:max(18px,env(safe-area-inset-left,0px)); padding-right:max(18px,env(safe-area-inset-right,0px)); padding-block:36px 60px; }
       .kick { font-size:11px; font-weight:500; letter-spacing:.3em; text-transform:uppercase; color:var(--faint); margin:0 0 12px; }
       h1 { font-weight:300; font-size:clamp(30px,7vw,44px); letter-spacing:.04em; margin:0; }
-      .sub { color:var(--muted); font-size:14.5px; margin:12px 0 0; max-width:56ch; }
+      .sub { color:var(--muted); font-size:14.5px; margin:12px 0 0; max-width:58ch; }
       .sync { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); } .sync.err { color:var(--warn); }
 
-      .add { margin-top:26px; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:var(--shadow); padding:18px 20px; display:flex; flex-direction:column; gap:12px; }
-      .add .lab { font-size:10px; font-weight:500; letter-spacing:.2em; text-transform:uppercase; color:var(--faint); margin:0 0 4px; }
-      .add input[type=date], .add input.t, .add textarea { font:inherit; font-size:14px; padding:9px 12px; border:1px solid var(--line); border-radius:6px; width:100%; background:var(--surface); color:var(--ink); }
-      .add textarea { min-height:56px; resize:vertical; }
-      .add .two { display:grid; grid-template-columns:170px 1fr; gap:12px; }
-      .add button { font:inherit; font-weight:500; letter-spacing:.12em; text-transform:uppercase; font-size:12px; background:var(--ink); color:#fff; border:0; border-radius:999px; padding:11px 24px; cursor:pointer; align-self:flex-start; }
-      @media (max-width:620px) { .add .two { grid-template-columns:1fr; } }
+      .panel { margin-top:26px; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:var(--shadow); padding:20px 20px; }
+      .panel .lab { font-size:10px; font-weight:500; letter-spacing:.2em; text-transform:uppercase; color:var(--faint); margin:0 0 4px; }
+      .panel .hint { font-size:12.5px; color:var(--muted); margin:0 0 14px; }
+      .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+      .row input[type=date], .row input.name, .t { font:inherit; font-size:14px; padding:9px 12px; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--ink); }
+      .row input.name { width:150px; }
+      textarea { font:inherit; font-size:14px; padding:11px 13px; border:1px solid var(--line); border-radius:6px; width:100%; background:var(--surface); color:var(--ink); resize:vertical; }
+      .notes-ta { min-height:150px; }
+      .go { font:inherit; font-weight:500; letter-spacing:.12em; text-transform:uppercase; font-size:12px; background:var(--ink); color:#fff; border:0; border-radius:999px; padding:12px 26px; cursor:pointer; margin-top:12px; }
+      .go[disabled] { opacity:.55; cursor:default; }
+      .pstat { font-size:12.5px; color:var(--muted); margin-top:10px; min-height:18px; } .pstat.err { color:var(--warn); }
 
-      .timeline { margin-top:30px; }
+      details.manual { margin-top:14px; }
+      details.manual summary { cursor:pointer; font-size:11px; font-weight:500; letter-spacing:.16em; text-transform:uppercase; color:var(--faint); list-style:none; padding:6px 0; }
+      details.manual summary::-webkit-details-marker { display:none; }
+      details.manual summary::before { content:"+ "; }
+      details.manual[open] summary::before { content:"\2212 "; }
+      .manual .mfields { display:flex; flex-direction:column; gap:10px; margin-top:8px; }
+      .manual .two { display:grid; grid-template-columns:170px 1fr; gap:10px; }
+      @media (max-width:620px){ .manual .two { grid-template-columns:1fr; } }
+
+      .timeline { margin-top:32px; }
       .mtg { position:relative; padding:0 0 26px 26px; border-left:1px solid var(--line); margin-left:6px; }
       .mtg:last-child { border-left-color:transparent; }
       .mtg::before { content:""; position:absolute; left:-5px; top:3px; width:9px; height:9px; border-radius:50%; background:var(--accent); }
       .mtg .date { font-size:11px; font-weight:500; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); }
       .mtg .card { background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:var(--shadow); padding:16px 18px; margin-top:8px; }
-      .mtg .k { font-size:10px; font-weight:500; letter-spacing:.18em; text-transform:uppercase; color:var(--faint); margin:0 0 4px; }
-      .mtg .blk + .blk { margin-top:12px; }
-      .mtg .body { font-size:14px; color:var(--ink); white-space:pre-wrap; }
-      .mtg .by { font-size:11px; color:var(--faint); margin-top:12px; } .mtg .by .rm { color:var(--faint); background:none; border:0; cursor:pointer; font-size:12px; margin-left:8px; } .mtg .by .rm:hover { color:var(--warn); }
+      .blk + .blk { margin-top:14px; }
+      .blk .k { font-size:10px; font-weight:500; letter-spacing:.18em; text-transform:uppercase; color:var(--faint); margin:0 0 5px; }
+      .blk .body { font-size:14px; color:var(--ink); white-space:pre-wrap; }
+      .blk ul { margin:0; padding-left:18px; } .blk li { font-size:14px; margin:3px 0; }
+      .ai-item { display:flex; gap:10px; align-items:flex-start; font-size:14px; margin:6px 0; }
+      .own { font-size:10px; font-weight:500; letter-spacing:.1em; text-transform:uppercase; border-radius:999px; padding:3px 9px; white-space:nowrap; flex:none; margin-top:1px; border:1px solid currentColor; }
+      .own-Nate { color:var(--accent); } .own-Pat { color:var(--good); } .own-Mike { color:var(--ochre); } .own-All, .own-Unassigned { color:var(--muted); }
+      .mtg .by { font-size:11px; color:var(--faint); margin-top:14px; } .mtg .by .rm { color:var(--faint); background:none; border:0; cursor:pointer; font-size:12px; margin-left:8px; } .mtg .by .rm:hover { color:var(--warn); }
       .empty { color:var(--faint); font-size:13px; padding:10px 0; }
-
       .foot { margin-top:40px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); }
     </style>
   </head>
@@ -94,22 +110,31 @@
     <div class="wrap">
       <p class="kick">Looking back</p>
       <h1>Meetings</h1>
-      <p class="sub">A record of each time we met: what we covered and the progress we made. A retrospective timeline, so we can see how far we have come and keep ourselves honest on the pace.</p>
+      <p class="sub">Paste your AI meeting notes and they are parsed the same way every time: a short summary, the decisions made, and the action items with who owns each. A retrospective timeline of how far we have come.</p>
 
-      <div class="add">
-        <div>
-          <p class="lab">Log a meeting</p>
-          <div class="two">
-            <input type="date" id="m-date" />
-            <input class="t" id="m-title" placeholder="Short title (optional), e.g. Kickoff" />
-          </div>
+      <div class="panel">
+        <p class="lab">Add from AI notes</p>
+        <p class="hint">Paste the transcript or summary from your AI notetaker. Claude pulls out the decisions and action items and files it below.</p>
+        <div class="row">
+          <input type="date" id="ai-date" />
+          <input class="name" id="name" placeholder="your name" />
         </div>
-        <div><p class="lab">What we discussed</p><textarea id="m-disc" placeholder="The main things we talked through."></textarea></div>
-        <div><p class="lab">Progress made</p><textarea id="m-prog" placeholder="What moved forward, what was decided, what is now owned by whom."></textarea></div>
-        <button id="add-btn" type="button">Add to the timeline</button>
+        <textarea class="notes-ta" id="notes" placeholder="Paste the AI meeting notes here."></textarea>
+        <button class="go" id="parse-btn" type="button">Parse &amp; add to the timeline</button>
+        <p class="pstat" id="pstat"></p>
+
+        <details class="manual">
+          <summary>Or add a meeting by hand</summary>
+          <div class="mfields">
+            <div class="two"><input type="date" id="m-date" /><input class="t" id="m-title" placeholder="Short title (optional)" /></div>
+            <textarea id="m-disc" placeholder="What we discussed" style="min-height:52px"></textarea>
+            <textarea id="m-prog" placeholder="Progress made / decisions / who owns what" style="min-height:52px"></textarea>
+            <button class="go" id="add-btn" type="button" style="margin-top:0">Add by hand</button>
+          </div>
+        </details>
       </div>
 
-      <p class="sync" id="sync" style="margin-top:14px">loading&hellip;</p>
+      <p class="sync" id="sync" style="margin-top:16px">loading&hellip;</p>
       <div class="timeline" id="timeline"></div>
 
       <p class="foot">Brother Beam &middot; shared across the three of us</p>
@@ -130,39 +155,61 @@
         }
 
         function start() {
-          var KEY = 'beam-meetings', LKEY = 'bb-meetings-local';
+          var KEY = 'beam-meetings', LKEY = 'bb-meetings-local', NKEY = 'bb-meetings-name';
           var state = { meetings: [] }, online = false, timer = null;
           var tl = document.getElementById('timeline'), syncEl = document.getElementById('sync');
-          var dateEl = document.getElementById('m-date'), titleEl = document.getElementById('m-title'), discEl = document.getElementById('m-disc'), progEl = document.getElementById('m-prog');
-          try { dateEl.value = new Date().toISOString().slice(0,10); } catch (e) {}
+          var aiDateEl = document.getElementById('ai-date'), notesEl = document.getElementById('notes'), nameEl = document.getElementById('name'), parseBtn = document.getElementById('parse-btn'), pstat = document.getElementById('pstat');
+          var mDateEl = document.getElementById('m-date'), mTitleEl = document.getElementById('m-title'), mDiscEl = document.getElementById('m-disc'), mProgEl = document.getElementById('m-prog');
+          function today() { try { return new Date().toISOString().slice(0,10); } catch (e) { return ''; } }
+          aiDateEl.value = today(); mDateEl.value = today();
+          try { nameEl.value = localStorage.getItem(NKEY) || localStorage.getItem('bb-progress-name') || ''; } catch (e) {}
+          nameEl.addEventListener('change', function () { try { localStorage.setItem(NKEY, nameEl.value.trim()); } catch (e) {} });
+          function me() { return (nameEl.value || '').trim() || 'someone'; }
 
           function esc(x) { return String(x==null?'':x).replace(/[&<>"']/g, function (c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+          function ownClass(o) { return ['Nate','Pat','Mike','All','Unassigned'].indexOf(o) >= 0 ? 'own-'+o : 'own-Unassigned'; }
           function fmtDate(d) { try { var p=String(d).split('-'); return new Date(p[0], p[1]-1, p[2]).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'}); } catch(e){ return esc(d); } }
 
           function render() {
             var ms = (state.meetings||[]).slice().sort(function (a,b){ return (b.date||'').localeCompare(a.date||''); });
-            if (!ms.length) { tl.innerHTML = '<div class="empty">No meetings logged yet. Add the first one above.</div>'; return; }
+            if (!ms.length) { tl.innerHTML = '<div class="empty">No meetings logged yet. Paste your AI notes above to add the first one.</div>'; return; }
             tl.innerHTML = ms.map(function (m) {
-              var blocks = '';
-              if (m.disc) blocks += '<div class="blk"><p class="k">Discussed</p><div class="body">'+esc(m.disc)+'</div></div>';
-              if (m.prog) blocks += '<div class="blk"><p class="k">Progress made</p><div class="body">'+esc(m.prog)+'</div></div>';
-              if (!blocks) blocks = '<div class="body" style="color:var(--faint)">No notes.</div>';
-              return '<div class="mtg"><div class="date">'+esc(fmtDate(m.date))+(m.title?' &middot; '+esc(m.title):'')+'</div>'
-                + '<div class="card">'+blocks+'<div class="by">Logged by '+esc(m.by||'someone')+'<button class="rm" data-id="'+esc(m.id)+'">remove</button></div></div></div>';
+              var b = '';
+              if (m.disc) b += '<div class="blk"><p class="k">Discussed</p><div class="body">'+esc(m.disc)+'</div></div>';
+              if (m.decisions && m.decisions.length) b += '<div class="blk"><p class="k">Decisions</p><ul>'+m.decisions.map(function (d){ return '<li>'+esc(d)+'</li>'; }).join('')+'</ul></div>';
+              if (m.actionItems && m.actionItems.length) b += '<div class="blk"><p class="k">Action items</p>'+m.actionItems.map(function (a){ return '<div class="ai-item"><span class="own '+ownClass(a.owner)+'">'+esc(a.owner)+'</span><span>'+esc(a.item)+'</span></div>'; }).join('')+'</div>';
+              if (m.prog) b += '<div class="blk"><p class="k">Progress</p><div class="body">'+esc(m.prog)+'</div></div>';
+              if (!b) b = '<div class="body" style="color:var(--faint)">No notes.</div>';
+              var src = m.source === 'ai' ? ' &middot; from AI notes' : '';
+              return '<div class="mtg"><div class="date">'+esc(fmtDate(m.date))+(m.title?' &middot; '+esc(m.title):'')+'</div><div class="card">'+b+'<div class="by">Logged by '+esc(m.by||'someone')+src+'<button class="rm" data-id="'+esc(m.id)+'">remove</button></div></div></div>';
             }).join('');
-            tl.querySelectorAll('.rm').forEach(function (b){ b.addEventListener('click', function(){ remove(b.getAttribute('data-id')); }); });
+            tl.querySelectorAll('.rm').forEach(function (btn){ btn.addEventListener('click', function(){ remove(btn.getAttribute('data-id')); }); });
           }
-          function add() {
-            var disc = (discEl.value||'').trim(), prog = (progEl.value||'').trim();
-            if (!disc && !prog) { discEl.focus(); return; }
-            var nm = ''; try { nm = localStorage.getItem('bb-progress-name') || localStorage.getItem('bb-work-name') || ''; } catch (e) {}
-            state.meetings = (state.meetings||[]).concat([{ id: 'm'+Date.now(), date: dateEl.value || new Date().toISOString().slice(0,10), title:(titleEl.value||'').trim(), disc:disc, prog:prog, by: nm || 'someone', at:new Date().toISOString() }]);
-            titleEl.value=''; discEl.value=''; progEl.value=''; save(); render();
+
+          function addMeeting(m) { state.meetings = (state.meetings||[]).concat([m]); save(); render(); }
+          function remove(id) { if (!window.confirm('Remove this meeting from the timeline?')) return; state.meetings = (state.meetings||[]).filter(function (m){ return m.id !== id; }); save(); render(); }
+
+          function parse() {
+            var notes = (notesEl.value||'').trim(); if (!notes) { notesEl.focus(); return; }
+            pstat.className = 'pstat'; pstat.textContent = 'Parsing the notes with Claude…'; parseBtn.disabled = true;
+            fetch('/api/parse-notes', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ notes: notes, pw: PW }) })
+              .then(function (r){ return r.json().then(function (j){ return { ok:r.ok, status:r.status, j:j }; }); })
+              .then(function (res){
+                parseBtn.disabled = false;
+                if (!res.ok) { pstat.className = 'pstat err'; pstat.textContent = (res.j && res.j.error) || ('error ' + res.status); return; }
+                var j = res.j;
+                addMeeting({ id:'m'+Date.now(), date: aiDateEl.value || today(), title: j.title||'', disc: j.discussed||'', decisions: j.decisions||[], actionItems: j.actionItems||[], prog:'', by: me(), at:new Date().toISOString(), source:'ai' });
+                notesEl.value = ''; pstat.className = 'pstat'; pstat.textContent = 'Added to the timeline.';
+              })
+              .catch(function (e){ parseBtn.disabled = false; pstat.className = 'pstat err'; pstat.textContent = 'Could not parse (' + e.message + ').'; });
           }
-          function remove(id) {
-            if (!window.confirm('Remove this meeting from the timeline?')) return;
-            state.meetings = (state.meetings||[]).filter(function (m){ return m.id !== id; }); save(); render();
+          function addManual() {
+            var disc = (mDiscEl.value||'').trim(), prog = (mProgEl.value||'').trim();
+            if (!disc && !prog) { mDiscEl.focus(); return; }
+            addMeeting({ id:'m'+Date.now(), date: mDateEl.value || today(), title:(mTitleEl.value||'').trim(), disc:disc, decisions:[], actionItems:[], prog:prog, by: me(), at:new Date().toISOString(), source:'manual' });
+            mTitleEl.value=''; mDiscEl.value=''; mProgEl.value='';
           }
+
           function save() {
             try { localStorage.setItem(LKEY, JSON.stringify(state)); } catch (e) {}
             clearTimeout(timer);
@@ -179,7 +226,8 @@
               .then(function (j){ online=true; if (j&&j.value&&j.value.meetings){ state={meetings:j.value.meetings}; try{localStorage.setItem(LKEY,JSON.stringify(state));}catch(e){} } syncEl.textContent='shared'; syncEl.className='sync'; render(); })
               .catch(function (e){ online=false; try{ state=JSON.parse(localStorage.getItem(LKEY))||state; }catch(x){} syncEl.textContent='shared board unreachable ('+e.message+')'; syncEl.className='sync err'; render(); });
           }
-          document.getElementById('add-btn').addEventListener('click', add);
+          parseBtn.addEventListener('click', parse);
+          document.getElementById('add-btn').addEventListener('click', addManual);
           render(); load();
           setInterval(function(){ if (online && !timer) load(); }, 45000);
         }
