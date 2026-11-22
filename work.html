@@ -74,7 +74,7 @@
 
       .foot { margin-top: 36px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
 
-      @media (max-width: 680px) { .task { grid-template-columns: 1fr; } .ctl { order: -1; } }
+      @media (max-width: 680px) { .task { grid-template-columns: 1fr; } .ctl { flex-direction: row; align-items: center; gap: 12px; } .ctl select { width: auto; flex: 1; } }
     </style>
   </head>
   <body class="locked">
