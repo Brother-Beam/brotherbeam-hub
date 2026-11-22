@@ -117,8 +117,6 @@
     </div>
 
     <script type="module">
-      import { upload } from 'https://esm.sh/@vercel/blob@2.9.0/client';
-
       var PW = 'beam', GKEY = 'bb-docs-gate';
       var gateOk = false; try { gateOk = localStorage.getItem(GKEY) === 'ok'; } catch (e) {}
       function unlock() { document.body.classList.remove('locked'); var g = document.getElementById('gate'); if (g) g.remove(); start(); }
@@ -173,6 +171,8 @@
           pbar.classList.add('on'); pfill.style.width = '0%';
           setStatus('Uploading ' + file.name + '…');
           try {
+            var mod = await import('https://esm.sh/@vercel/blob@2.9.0/client');
+            var upload = mod.upload;
             await upload(file.name, file, {
               access: 'public',
               handleUploadUrl: '/api/blob-upload',
