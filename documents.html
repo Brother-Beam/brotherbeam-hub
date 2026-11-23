@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>Beam &middot; Documents</title>
+    <title>Beam &middot; Library</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
@@ -75,7 +75,18 @@
       .foot { margin-top:36px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); }
     </style>
   </head>
-  <body>
+  <body class="locked">
+    <div class="gate" id="gate">
+      <form id="gate-form" autocomplete="off">
+        <div class="brand">Beam</div>
+        <p class="k">Private &middot; Library</p>
+        <label for="pw">Password</label>
+        <input id="pw" type="password" autocomplete="off" autofocus />
+        <button type="submit">Open</button>
+        <p class="err" id="err"></p>
+      </form>
+    </div>
+
     <div class="bar">
       <div class="in">
         <span class="brand"><i></i>BEAM</span>
@@ -99,9 +110,9 @@
     </div>
 
     <div class="wrap">
-      <p class="kick">The repository</p>
-      <h1>Documents</h1>
-      <p class="sub">Our shared files: the decks, resumes, the business case, workshop notes, anything the three of us should have in one place. Drop a file to add it. Everyone with the link sees the same list.</p>
+      <p class="kick">The library</p>
+      <h1>Our Library</h1>
+      <p class="sub">Our shared files: the decks, resumes, the business case, workshop notes, anything the three of us should have in one place. Drop a file to add it. This page is private &mdash; only someone with the password can open or download what is here.</p>
 
       <div class="drop" id="drop">
         <input type="file" id="picker" style="display:none" multiple />
@@ -121,7 +132,17 @@
     </div>
 
     <script type="module">
-      start();
+      var PW = 'beam', GKEY = 'bb-docs-gate';
+      var gateOk = false; try { gateOk = localStorage.getItem(GKEY) === 'ok'; } catch (e) {}
+      function unlock() { document.body.classList.remove('locked'); var g = document.getElementById('gate'); if (g) g.remove(); start(); }
+      if (gateOk) { unlock(); } else {
+        document.getElementById('gate-form').addEventListener('submit', function (ev) {
+          ev.preventDefault();
+          var v = (document.getElementById('pw').value || '').trim().toLowerCase();
+          if (v === PW) { try { localStorage.setItem(GKEY, 'ok'); } catch (e) {} unlock(); }
+          else { document.getElementById('err').textContent = 'That is not it.'; document.getElementById('pw').select(); }
+        });
+      }
 
       function start() {
         var drop = document.getElementById('drop'), picker = document.getElementById('picker');
@@ -135,15 +156,17 @@
         function setStatus(msg, err) { statusEl.textContent = msg || ''; statusEl.className = 'status' + (err ? ' err' : ''); }
 
         function loadFiles() {
-          fetch('/api/blob-list').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          fetch('/api/blob-list?pw=' + encodeURIComponent(PW)).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function (j) {
               var files = (j && j.files) || [];
               if (!files.length) { filesEl.innerHTML = '<div class="empty">No documents yet. Add the first one above.</div>'; return; }
               filesEl.innerHTML = files.map(function (f) {
-                return '<div class="file"><div><div class="nm"><a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(baseName(f.pathname)) + '</a></div>'
+                var nm = baseName(f.pathname);
+                var dl = '/api/blob-get?pw=' + encodeURIComponent(PW) + '&path=' + encodeURIComponent(f.pathname) + '&name=' + encodeURIComponent(nm);
+                return '<div class="file"><div><div class="nm"><a href="' + esc(dl) + '">' + esc(nm) + '</a></div>'
                   + '<div class="meta">' + esc(fmtSize(f.size)) + ' &middot; ' + esc(fmtDate(f.uploadedAt)) + '</div></div>'
-                  + '<div class="acts"><a class="dl" href="' + esc(f.downloadUrl || f.url) + '">Download</a>'
-                  + '<button class="rm" title="Remove" data-url="' + esc(f.url) + '" data-name="' + esc(baseName(f.pathname)) + '">&times;</button></div></div>';
+                  + '<div class="acts"><a class="dl" href="' + esc(dl) + '">Download</a>'
+                  + '<button class="rm" title="Remove" data-url="' + esc(f.url) + '" data-name="' + esc(nm) + '">&times;</button></div></div>';
               }).join('');
               filesEl.querySelectorAll('.rm').forEach(function (b) {
                 b.addEventListener('click', function () { removeFile(b.getAttribute('data-url'), b.getAttribute('data-name')); });
@@ -154,7 +177,7 @@
 
         function removeFile(url, name) {
           if (!window.confirm('Remove "' + name + '"? This cannot be undone.')) return;
-          fetch('/api/blob-delete?url=' + encodeURIComponent(url), { method: 'POST' })
+          fetch('/api/blob-delete?pw=' + encodeURIComponent(PW) + '&url=' + encodeURIComponent(url), { method: 'POST' })
             .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function () { setStatus('Removed ' + name + '.'); loadFiles(); })
             .catch(function (e) { setStatus('Could not remove it (' + e.message + ').', true); });
@@ -168,9 +191,10 @@
             var mod = await import('https://esm.sh/@vercel/blob@2.9.0/client');
             var upload = mod.upload;
             await upload(file.name, file, {
-              access: 'public',
+              access: 'private',
               handleUploadUrl: '/api/blob-upload',
               multipart: true,
+              clientPayload: JSON.stringify({ pw: PW }),
               onUploadProgress: function (p) { if (p && p.percentage != null) pfill.style.width = Math.round(p.percentage) + '%'; }
             });
             setStatus('Added ' + file.name + '.');

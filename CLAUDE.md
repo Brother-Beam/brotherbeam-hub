@@ -1,24 +1,41 @@
-# Brother Beam hub
+# Beam hub
 
-This repo is the internal work hub for **Brother Beam**, a consulting company founded by Pat Fitzgerald (founder) with Mike FitzGerald (co-founder) and a third partner. Read `vision.html` first: it is the company in one page.
+Internal work hub for **Beam**, a consultation and advisory agency that helps good businesses navigate transformation (succession, technology, scaling). Founders: **Nate**, **Pat**, **Mike**. When a client is ready for it, Beam deploys an AI agent called **Scotty** into the business. Read `index.html` (the Vision) first; it is the company in one page.
 
-**What the company does, in one line:** we strengthen businesses that already work. The method is sistering: when a sound beam must carry more, a builder bolts a new beam alongside it instead of tearing it out. We measure a business as built (Survey), draw the target structure with AI inside it (Blueprint), build the new structure beside what works, workflow by workflow (Sistering), and stay until the load holds (Carry). The first move, a Walkthrough, is free.
+The repo/project is still named `brotherbeam-hub` for historical reasons; the company is **Beam**.
 
-## How this hub is built
+## Who this is for
 
-- Static HTML, no build step. Every page is one file. Styling comes from `brand.css` (tokens at the top: paper, ink, accent, font). Company facts come from `site.js` (`window.SITE`: name, tagline, people, pillars, gate password). Pages fill `[data-site="…"]` elements from it.
-- `index.html` is the home. `roadmap.html` holds the Work Station (shared checklist, edit `ITEMS` in the file) and the Roadmap (edit `INITS`). `vision.html` is the vision. `tools.js` is the inventory the home page renders; add a tool by adding one entry.
-- Shared state (Work Station status) is saved through `api/tasks.js`, a Vercel function that proxies to the company's API on Railway and adds the token server side. Browsers never hold a secret. Environment variables on Vercel: `HUB_API_BASE`, `HUB_API_TOKEN`.
-- Deploy: every push to `main` deploys on Vercel. There is nothing to run locally; open the HTML files in a browser to check them.
+The three founders **use** this hub like a shared drive and a meeting log. They do not edit it — Mike maintains it. Do NOT add any "open this in Claude and change any page" language; that contradicts how the team works.
 
-## Conventions
+## The pages (static HTML, no build step)
 
-- Construction vocabulary is the brand: sistering, load path, good bones, Survey, Blueprint, Carry, scaffolding, retrofit. Use these words consistently; the glossary at the bottom of `vision.html` defines them.
-- Writing: complete plain sentences, first person plural, no slogans beyond the tagline, no em dashes, numbers written plainly. Say what a thing does and why in one clause.
-- New pages copy the structure of an existing one: the `.bar` strip, the `.wrap`, `.kick` + `h1`, sections with `.sec-h`, cards from `brand.css`. Keep `noindex` on every page; this hub is internal.
-- Never commit a secret. Tokens and passwords live in Vercel and Railway only. The gate password in `site.js` is a convenience lock, not a secret.
-- When something ships, add a line to the matching initiative's log in `roadmap.html` (`INITS`) so the roadmap stays the source of truth.
+Each page is one self-contained file: inline `<style>` with the brand tokens, the shared nav bar, then the content. The six live pages, grouped as they appear in the nav:
+
+- `guide.html` — **Guide** (how to use the hub) · `index.html` — **Our Vision** (the company)
+- `progress.html` — **Our RoadMap** (roadmap + message board) · `documents.html` — **Our Library** (private file store) · `meetings.html` — **Meeting Minutes** (AI-notes parser)
+- `build.html` — **How I built this** (plain-language explainer for the founders)
+
+Nav is three color-coded groups separated by `.divi` dividers, with neon hover/active glow (cyan `#2DE2E6`, hot pink `#FF2E88`, purple `#B14EFF`). It is duplicated in each page's markup + `<style>`; change all six together (see `scratchpad` scripts or edit in place).
+
+Brand: font **Jost**. Tokens per page — paper `#F3F5F7`, ink `#141B22`, muted `#5A6775`, accent `#1F5EFF`, good `#0FA37F`, ochre `#B7791F`. Keep `noindex` on every page. Voice: plain complete sentences, first person plural.
+
+## Backend (Vercel serverless functions in `api/`)
+
+- `tasks.js` — proxies shared state to the Railway kv store, adding `HUB_API_TOKEN` server side. Keys: `beam-progress`, `beam-meetings`. Env: `HUB_API_BASE`, `HUB_API_TOKEN`.
+- `parse-notes.js` — sends pasted meeting notes to the Anthropic API and returns `{title, discussed, decisions[], actionItems[{item,owner}]}`. Env: `ANTHROPIC_API_KEY`. Model `claude-opus-5-5`.
+- `blob-upload.js` / `blob-list.js` / `blob-delete.js` / `blob-get.js` — the Library's file store on **Vercel Blob**. Env: `BLOB_READ_WRITE_TOKEN`.
+
+### Blob gotchas (hard-won — do not regress)
+
+- The store is **private**. Upload with `access: 'private'`; files are NOT reachable by their raw URL. `blob-get.js` streams a file to the browser server-side via `get(path, { access: 'private' })` — that is why the Library links downloads through `/api/blob-get`, never the blob URL.
+- `blob-upload.js` imports `handleUpload` from `@vercel/blob/client` **dynamically** (`await import(...)`). A top-level static import of `@vercel/blob/client` crashes the function at load (`FUNCTION_INVOCATION_FAILED`). The main `@vercel/blob` entry (used by list/del/get) is fine to import statically.
+- The four blob endpoints are gated by `?pw=beam` (or `clientPayload.pw` for upload). `beam` is a convenience lock in the page source, not a secret. Only **Our Library** is gated; the rest of the hub is open.
+
+## Deploy
+
+Push to `main` → Vercel auto-deploys. Env vars live in Vercel; the Railway token lives in Railway. Never commit a secret or the deploy-hook URL (this repo is public). After a push, give Vercel ~1 min, then check the live site at `https://brotherbeam-hub.vercel.app`.
 
 ## The other repo
 
-`brotherbeam-api` is the store: Express + Postgres on Railway, one `kv` table, bearer-token protected. Its README has the deploy steps.
+`brotherbeam-api` — the shared store: Express + Postgres on Railway, one `kv` table, bearer-token protected.

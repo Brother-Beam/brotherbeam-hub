@@ -14,7 +14,12 @@ export default async function handler(req, res) {
     const json = await handleUpload({
       body,
       request: req,
-      onBeforeGenerateToken: async () => ({ addRandomSuffix: true, maximumSizeInBytes: 50 * 1024 * 1024 }),
+      onBeforeGenerateToken: async (pathname, clientPayload) => {
+        let pw = '';
+        try { pw = String(JSON.parse(clientPayload || '{}').pw || '').toLowerCase(); } catch (e) {}
+        if (pw !== 'beam') throw new Error('unauthorized');
+        return { addRandomSuffix: true, maximumSizeInBytes: 50 * 1024 * 1024 };
+      },
     });
     res.status(200).json(json);
   } catch (error) {
