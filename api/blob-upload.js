@@ -17,7 +17,7 @@ export default async function handler(req, res) {
       onBeforeGenerateToken: async (pathname, clientPayload) => {
         let pw = '';
         try { pw = String(JSON.parse(clientPayload || '{}').pw || '').toLowerCase(); } catch (e) {}
-        if (pw !== 'beam') throw new Error('unauthorized');
+        if (pw !== 'scooter') throw new Error('unauthorized');
         return { addRandomSuffix: true, maximumSizeInBytes: 50 * 1024 * 1024 };
       },
     });

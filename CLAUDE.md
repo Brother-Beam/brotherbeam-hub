@@ -30,7 +30,7 @@ Brand: font **Jost**. Tokens per page — paper `#F3F5F7`, ink `#141B22`, muted 
 
 - The store is **private**. Upload with `access: 'private'`; files are NOT reachable by their raw URL. `blob-get.js` streams a file to the browser server-side via `get(path, { access: 'private' })` — that is why the Library links downloads through `/api/blob-get`, never the blob URL.
 - `blob-upload.js` imports `handleUpload` from `@vercel/blob/client` **dynamically** (`await import(...)`). A top-level static import of `@vercel/blob/client` crashes the function at load (`FUNCTION_INVOCATION_FAILED`). The main `@vercel/blob` entry (used by list/del/get) is fine to import statically.
-- The four blob endpoints are gated by `?pw=beam` (or `clientPayload.pw` for upload). `beam` is a convenience lock in the page source, not a secret. Only **Our Library** is gated; the rest of the hub is open.
+- The four blob endpoints are gated by `?pw=scooter` (or `clientPayload.pw` for upload). `scooter` is a convenience lock in the page source, not a secret. Only **Our Library** is gated; the rest of the hub is open.
 
 ## Deploy
 

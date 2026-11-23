@@ -132,7 +132,7 @@
     </div>
 
     <script type="module">
-      var PW = 'beam', GKEY = 'bb-docs-gate';
+      var PW = 'scooter', GKEY = 'bb-docs-gate2';
       var gateOk = false; try { gateOk = localStorage.getItem(GKEY) === 'ok'; } catch (e) {}
       function unlock() { document.body.classList.remove('locked'); var g = document.getElementById('gate'); if (g) g.remove(); start(); }
       if (gateOk) { unlock(); } else {

@@ -3,7 +3,7 @@
 import { list } from '@vercel/blob';
 
 export default async function handler(req, res) {
-  if (String((req.query && req.query.pw) || '').toLowerCase() !== 'beam') { res.status(401).json({ error: 'unauthorized' }); return; }
+  if (String((req.query && req.query.pw) || '').toLowerCase() !== 'scooter') { res.status(401).json({ error: 'unauthorized' }); return; }
   try {
     const { blobs } = await list();
     const files = blobs
