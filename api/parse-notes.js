@@ -4,7 +4,7 @@
 // simple. Needs ANTHROPIC_API_KEY in the environment. Open (no password).
 
 const SYSTEM = [
-  'You extract a structured record from meeting notes for a small advisory firm called Brother Beam.',
+  'You extract a structured record from meeting notes for a small advisory firm called Beam.',
   'Its three founders are Nate, Pat, and Mike.',
   'You are given raw notes or an AI notetaker transcript/summary of one meeting.',
   'Return ONLY a JSON object, with no prose and no code fences, in exactly this shape:',
