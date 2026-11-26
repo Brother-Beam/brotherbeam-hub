@@ -1,6 +1,22 @@
 {
   "entries": [
     {
+      "id": "weekly-email",
+      "at": "2026-11-26T18:38:00Z",
+      "title": "A weekly email, from Sunday evening",
+      "what": "Each week a short summary lands in all three of our inboxes: where the roadmap stands, the meetings logged with their decisions and action items, files added, what was posted on the board, and what is new in the hub.",
+      "suggestedBy": "Mike",
+      "resolves": []
+    },
+    {
+      "id": "email-alerts",
+      "at": "2026-11-26T18:37:00Z",
+      "title": "Mike hears about it right away",
+      "what": "When one of us sends a suggestion, uploads a file, logs a meeting, posts on the board or changes a roadmap status, Mike gets an email about it, usually within the hour. Changes can happen during the week instead of waiting for the next meeting.",
+      "suggestedBy": "Mike",
+      "resolves": []
+    },
+    {
       "id": "safe-to-use-together",
       "at": "2026-11-26T16:40:00Z",
       "title": "Safe to use at the same time",
@@ -25,5 +41,7 @@
       "resolves": []
     }
   ],
-  "declined": []
+  "declined": [
+    "fmwxw6ai0j2aol0"
+  ]
 }

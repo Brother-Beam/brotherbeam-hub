@@ -29,7 +29,7 @@ This is the hub's change process. Follow it every time; it is what keeps the que
 
 Every new feature gets a `whatsnew.json` entry even when nobody suggested it. Write `what` for a non-technical founder: what it does for them, not how it works.
 
-**Owed once email is flowing.** As of 2026-11-26 the delivery task had not yet been confirmed running, so the hub deliberately does not describe any email yet (nothing on the site should claim something that is not happening). Once Mike has received a real alert through the Claude task: add `whatsnew.json` entries for the Sunday summary and for the alerts, add a line about both to the Guide ("Asking for a change to the hub" and "Good to know"), and add a card to "The pieces" in `build.html`.
+When a change adds or alters an email, say so in `whatsnew.json` like any other feature. The emails were first announced there on 2026-11-26, after a real test alert had gone through the Claude task and been read back from Mike's mailbox.
 
 ## The pages (static HTML, no build step)
 
@@ -101,13 +101,15 @@ Mike is not emailed about his own posts, status changes, meetings or uploads. "H
 - Collecting **claims** each email for a few minutes so two collectors cannot both send it. `POST { sent: [keys] }` records it for good. If the collector never reports back, the claim lapses and the email is offered again: nothing is lost, at worst something goes twice.
 - `GET ...&dry=1` shows what is waiting and changes nothing. Add `&now=2026-11-30T01:30:00Z` to see what would be waiting at another moment (for example a Sunday evening).
 
-**The scheduled task** lives on Mike's Mac, not in this repo: `~/.claude/scheduled-tasks/` (the `mcp__scheduled-tasks__*` tools list and edit it). Its prompt holds the three email addresses, which is why they never need to be in this public repo or in Vercel. It only runs while the Claude app is open; anything that became ready while it was closed is delivered at the next run, which is exactly what the claim-and-catch-up design is for. If Mike reports missing or duplicate email, check the task's run history first, then `/api/outbox?pw=scooter&dry=1`.
+**The scheduled task** is `beam-hub-email`, on Mike's Mac, not in this repo: `~/.claude/scheduled-tasks/beam-hub-email/SKILL.md` (the `mcp__scheduled-tasks__*` tools list, edit and run it). It runs every hour at nine minutes past (Mike chose hourly), in Auto mode. Its first run, on 2026-11-26, delivered a test alert in about 40 seconds. Its prompt holds the three email addresses, which is why they never need to be in this public repo or in Vercel. It only runs while the Claude app is open; anything that became ready while it was closed is delivered at the next run, which is exactly what the claim-and-catch-up design is for. If Mike reports missing or duplicate email, check the task's run history first, then `/api/outbox?pw=scooter&dry=1`.
 
 How "news" is tracked: suggestions carry private marks (`mailed`, `mailClaim`) in `beam-feedback`; everything else uses one small value, `beam-alert-state`, holding per kind the time of the newest item Mike has been told about. The first time a kind is looked at it starts from a minute before, so nothing that was already in the hub is ever sent as a backlog.
 
 **If the hub is ever given a way to send by itself** (it has not been): `_lib/mail.js` can send through Gmail (`DIGEST_TO` + `GMAIL_APP_PASSWORD`) or Resend (`RESEND_API_KEY` + `DIGEST_FROM`). With either set, the same endpoints send each alert at the moment it happens (`_lib/alerts.js`, `feedback.js`) and `digest.js` sends the weekly summary on the Sunday cron in `vercel.json`; the outbox then has nothing left to hand over, so the two routes cannot double-send. Without them those code paths do nothing except keep the "told up to" marks moving, and `/api/digest?status=1` reports `ready: false`. That is the expected state, not a fault.
 
 Also useful: `/api/digest?preview=1&pw=scooter` renders the weekly summary as it would look right now (the designed HTML version), and `&format=text` shows the plain-text version that is actually delivered.
+
+**Email HTML rule, learned from the first real send:** Gmail stripped every `background:` style and kept every `bgcolor` attribute. So colour goes on table cells as `bgcolor` plus `background-color`, never the `background` shorthand, and a button's fill sits on a cell around the link (`mailButton()` in `logic.js`), not on the link. A test pins this. After changing an email template, send one test through the task and read it back with the Gmail connector's `get_thread` to see what actually arrived.
 
 ## Tests (run before every deploy)
 

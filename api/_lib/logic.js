@@ -171,12 +171,22 @@ export function markAlerted(list, ids, nowIso) {
 function stampMT(t) { return dayShort(t) + ', ' + fmt(t, { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ') + ' MT'; }
 function who2(x) { return (x && x.by && x.by !== 'someone') ? x.by : 'Someone'; }
 
+// A button that keeps its dark fill in every mail app. The colour sits on a table cell as a
+// bgcolor attribute as well as in CSS: the first real email through Gmail came back with
+// every "background" style stripped and every bgcolor attribute intact, which would have
+// left white text on a white page.
+function mailButton(label, href) {
+  return '<table role="presentation" cellpadding="0" cellspacing="0"><tr><td bgcolor="' + C.ink + '" style="background-color:' + C.ink + ';border-radius:999px;">'
+    + '<a href="' + href + '" style="margin:0;font-family:' + FONT + ';display:inline-block;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:13px 26px;">' + esc(label) + '</a>'
+    + '</td></tr></table>';
+}
+
 // One item in an alert: a small line saying who and when, the thing itself in a box, an optional note under it.
 function alertBlock(metaHtml, bodyHtml, noteText) {
   const P = 'margin:0;font-family:' + FONT + ';';
   return '<tr><td style="padding:18px 28px 0;">'
     + '<div style="' + P + 'font-size:13px;color:' + C.muted + ';">' + metaHtml + '</div>'
-    + '<div style="' + P + 'font-size:16px;line-height:1.55;color:' + C.ink + ';margin-top:8px;padding:14px 16px;background:' + C.paper + ';border-left:3px solid ' + C.accent + ';border-radius:6px;">' + bodyHtml + '</div>'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px;"><tr><td bgcolor="' + C.paper + '" style="' + P + 'font-size:16px;line-height:1.55;color:' + C.ink + ';padding:14px 16px;background-color:' + C.paper + ';border-left:3px solid ' + C.accent + ';border-radius:6px;">' + bodyHtml + '</td></tr></table>'
     + (noteText ? '<div style="' + P + 'font-size:11px;color:' + C.faint + ';margin-top:6px;">' + esc(noteText) + '</div>' : '')
     + '</td></tr>';
 }
@@ -186,17 +196,17 @@ function strong(t) { return '<b style="font-weight:600;color:' + C.ink + ';">' +
 function alertShell(o) {
   const P = 'margin:0;font-family:' + FONT + ';';
   return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light only"><title>' + esc(o.subject) + '</title></head>'
-    + '<body style="margin:0;padding:0;background:' + C.paper + ';">'
+    + '<body bgcolor="' + C.paper + '" style="margin:0;padding:0;background-color:' + C.paper + ';">'
     + '<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">' + esc(o.preheader || '') + '</div>'
-    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="' + C.paper + '" style="background:' + C.paper + ';"><tr><td align="center" style="padding:24px 12px;">'
-    + '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:' + C.surface + ';border:1px solid ' + C.line + ';border-radius:12px;">'
-    + '<tr><td bgcolor="' + C.ink + '" style="background:' + C.ink + ';padding:20px 28px;border-radius:11px 11px 0 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="' + C.paper + '" style="background-color:' + C.paper + ';"><tr><td align="center" style="padding:24px 12px;">'
+    + '<table role="presentation" width="600" cellpadding="0" cellspacing="0" bgcolor="' + C.surface + '" style="width:100%;max-width:600px;background-color:' + C.surface + ';border:1px solid ' + C.line + ';border-radius:12px;">'
+    + '<tr><td bgcolor="' + C.ink + '" style="background-color:' + C.ink + ';padding:20px 28px;border-radius:11px 11px 0 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
     + '<td style="' + P + 'font-size:15px;letter-spacing:.24em;color:#ffffff;">BEAM</td>'
     + '<td align="right" style="' + P + 'font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#9aa6b2;">The hub &middot; ' + esc(o.tag) + '</td>'
     + '</tr></table></td></tr>'
     + '<tr><td style="padding:26px 28px 0;"><div style="' + P + 'font-size:23px;line-height:1.25;font-weight:300;color:' + C.ink + ';">' + esc(o.headline) + '</div></td></tr>'
     + o.blocks
-    + '<tr><td style="padding:24px 28px 0;"><a href="' + o.href + '" style="' + P + 'display:inline-block;background:' + C.ink + ';color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:13px 26px;border-radius:999px;">' + esc(o.button) + '</a></td></tr>'
+    + '<tr><td style="padding:24px 28px 0;">' + mailButton(o.button, o.href) + '</td></tr>'
     + '<tr><td style="padding:20px 28px 28px;"><div style="' + P + 'font-size:12px;line-height:1.6;color:' + C.faint + ';">' + esc(o.foot) + '</div></td></tr>'
     + '</table></td></tr></table></body></html>';
 }
@@ -779,11 +789,11 @@ export function compose(data, nowMs, opts) {
 
   const preheader = clip(intro, 140);
   const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light only"><title>' + esc(subject) + '</title></head>'
-    + '<body style="margin:0;padding:0;background:' + C.paper + ';">'
+    + '<body bgcolor="' + C.paper + '" style="margin:0;padding:0;background-color:' + C.paper + ';">'
     + '<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">' + esc(preheader) + '</div>'
-    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="' + C.paper + '" style="background:' + C.paper + ';"><tr><td align="center" style="padding:24px 12px;">'
-    + '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:' + C.surface + ';border:1px solid ' + C.line + ';border-radius:12px;">'
-    + '<tr><td bgcolor="' + C.ink + '" style="background:' + C.ink + ';padding:20px 28px;border-radius:11px 11px 0 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="' + C.paper + '" style="background-color:' + C.paper + ';"><tr><td align="center" style="padding:24px 12px;">'
+    + '<table role="presentation" width="600" cellpadding="0" cellspacing="0" bgcolor="' + C.surface + '" style="width:100%;max-width:600px;background-color:' + C.surface + ';border:1px solid ' + C.line + ';border-radius:12px;">'
+    + '<tr><td bgcolor="' + C.ink + '" style="background-color:' + C.ink + ';padding:20px 28px;border-radius:11px 11px 0 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
     + '<td style="' + P + 'font-size:15px;letter-spacing:.24em;color:#ffffff;">BEAM</td>'
     + '<td align="right" style="' + P + 'font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#9aa6b2;">The hub &middot; weekly</td>'
     + '</tr></table></td></tr>'
@@ -799,7 +809,7 @@ export function compose(data, nowMs, opts) {
     + stat(s.moves, s.moves === 1 ? 'Roadmap update' : 'Roadmap updates', true)
     + '</tr></table></td></tr>'
     + body
-    + '<tr><td style="padding:28px 28px 0;"><a href="' + SITE + '/guide.html" style="' + P + 'display:inline-block;background:' + C.ink + ';color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:13px 26px;border-radius:999px;">Open the hub</a></td></tr>'
+    + '<tr><td style="padding:28px 28px 0;">' + mailButton('Open the hub', SITE + '/guide.html') + '</td></tr>'
     + '<tr><td style="padding:24px 28px 28px;"><div style="' + P + 'font-size:12px;line-height:1.6;color:' + C.faint + ';">You are getting this because you are one of the three of us. It goes out ' + esc(SCHEDULE_TEXT.replace('Sundays', 'every Sunday')) + '. Want something in the hub changed? Use <b style="font-weight:600;color:' + C.muted + ';">Suggest a change</b> at the bottom of any page.</div></td></tr>'
     + '</table></td></tr></table></body></html>';
 

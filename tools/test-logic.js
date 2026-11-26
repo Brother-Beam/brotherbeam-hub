@@ -433,6 +433,10 @@ group('Activity alerts: the emails');
   ok(all.every((m) => !/undefined|NaN|\[object Object\]/.test(m.subject + m.html + m.text)), 'no junk in any of them');
   ok(all.every((m) => (m.html.match(/<table/g) || []).length === (m.html.match(/<\/table>/g) || []).length && (m.html.match(/<div/g) || []).length === (m.html.match(/<\/div>/g) || []).length), 'and every one is well-formed');
   ok(all.every((m) => m.text.indexOf('<td') < 0 && m.text.indexOf('style=') < 0), 'with a clean plain-text version');
+  const everyEmail = all.map((m) => m.html).concat([L.composeAlert([{ id: 'fa00000001', by: 'Nate', at: t0, text: 'x', page: 'guide' }], 1, NOW).html, L.compose(busy, NOW).html]);
+  ok(everyEmail.every((h) => !/background\s*:/.test(h)), 'no email uses the "background" style that Gmail strips');
+  ok(everyEmail.every((h) => /<td bgcolor="#141B22" style="background-color:#141B22;border-radius:999px;"><a href="https:\/\/brotherbeam-hub\.vercel\.app\//.test(h)), 'every button\'s dark fill sits on a table cell, where Gmail keeps it');
+  ok(everyEmail.every((h) => h.indexOf('<body bgcolor="#F3F5F7"') > 0 && h.indexOf('cellspacing="0" bgcolor="#FFFFFF"') > 0), 'and the page and card colours are set the same way');
 }
 
 // ---------------------------------------------------------------- the outbox

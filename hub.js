@@ -93,7 +93,7 @@
           btn.disabled = false;
           if (!res.ok) { say(esc(res.j.error || ('Could not send (error ' + res.status + ').')) + ' Your text is still here.', true); return; }
           textEl.value = ''; count();
-          say((res.j.alert === 'sent' ? 'Sent, and Mike has been emailed. ' : 'Sent. ') + 'It is in the queue ' + (here === 'progress' ? 'above' : 'on <a href="progress.html">Our RoadMap</a>') + ', and clears itself once it is built or we decide to pass.');
+          say('Sent. Mike gets an email about it, and it is in the queue ' + (here === 'progress' ? 'above' : 'on <a href="progress.html">Our RoadMap</a>') + '. It clears itself once it is built or we decide to pass.');
           try { window.dispatchEvent(new CustomEvent('hub:suggestion', { detail: res.j.entry || null })); } catch (e) { /* old browser: the queue refreshes on its own */ }
         })
         .catch(function () { btn.disabled = false; say('Could not send. Your text is still here; check your connection and try again.', true); });
