@@ -270,6 +270,109 @@ group('Test data stays out of the email');
   ok(c.counts.quiet && c.html.indexOf('>Suggestions<') < 0, 'a week with nothing but test activity is still a quiet week');
 }
 
+// ---------------------------------------------------------------- the board
+group('The board: posts');
+{
+  let r = L.buildPost({ text: '  ' }, NOW);
+  ok(!r.ok && r.status === 400, 'an empty post is refused');
+  r = L.buildPost({ text: 'x'.repeat(L.MAX_TEXT + 1), by: 'Pat' }, NOW);
+  ok(!r.ok && /2001/.test(r.error), 'an over-long post is refused and says how long it was');
+  r = L.buildPost({ text: ' We closed the first deal \r\n next step Friday ', by: '  Pat ', at: '1999-01-01T00:00:00Z' }, NOW);
+  eq(r.post, { by: 'Pat', at: new Date(NOW).toISOString(), text: 'We closed the first deal \n next step Friday' }, 'a post is cleaned up and stamped with the server\'s time, whatever the page claimed');
+  eq(L.buildPost({ text: 'hi' }, NOW).post.by, 'someone', 'no name is recorded as "someone"');
+  eq(L.buildPost('{"text":"sent as text","by":"Nate"}', NOW).post.text, 'sent as text', 'a body that arrives as text is still read');
+  eq([L.bodyOf('not json'), L.bodyOf(null), L.bodyOf('7')], [{}, {}, {}], 'a body that is not an object reads as empty, not a crash');
+
+  const old = [{ by: 'Nate', at: ago(5), text: 'first' }, { by: 'Mike', at: ago(4), text: 'second', extra: 'kept' }];
+  const board = { items: { outline: { status: 'progress', by: 'Pat', at: ago(3) } }, messages: old };
+  const p = L.buildPost({ text: 'third', by: 'Pat' }, NOW).post;
+  let a = L.addPost(board, p, NOW);
+  eq(a.board.messages.slice(0, 2), old, 'existing posts are carried over untouched and in order');
+  eq(a.board.messages[2], p, 'the new post goes on the end');
+  eq(a.board.items, board.items, 'and the statuses are untouched');
+  eq(board.messages.length, 2, 'the stored board is not modified in place');
+  a = L.addPost(a.board, L.buildPost({ text: 'third', by: 'Pat' }, NOW + 3000).post, NOW + 3000);
+  ok(a.duplicate && !a.board, 'the same post from the same person seconds later is a double-click, not a second post');
+  a = L.addPost({ items: {}, messages: [{ by: 'Pat', at: ago(1), text: 'third' }] }, p, NOW);
+  ok(a.board && a.board.messages.length === 2, 'the same words a day later are a new post');
+
+  let full = { items: {}, messages: [] }, held = 0, refused = null;
+  for (; held < 500; held++) {
+    const out = L.addPost(full, { by: 'P', at: ago(1), text: 'y'.repeat(1990) + held }, NOW);
+    if (!out.board) { refused = out; break; }
+    full = out.board;
+  }
+  ok(refused && refused.full, 'a board that has reached the store\'s size limit refuses the new post');
+  ok(full.messages.length === held && L.fits(full), 'and never drops an old post to make room (' + held + ' maximum-length posts fit; ordinary ones, several hundred)');
+}
+
+group('The board: statuses');
+{
+  const steps = L.stepIds({ now: [{ id: 'outline' }], next: [{ id: 'process' }, { id: 'sandbox' }, { noId: true }, null] });
+  eq(steps, ['outline', 'process', 'sandbox'], 'the steps a status can be set on come from roadmap.json');
+  eq(L.stepIds(null), [], 'no roadmap means no steps');
+  const r = L.buildStatus({ id: 'outline', status: 'done', by: 'Pat' }, steps, NOW);
+  eq([r.ok, r.id, r.entry], [true, 'outline', { status: 'done', by: 'Pat', at: new Date(NOW).toISOString() }], 'a status change records who and when');
+  ok(!L.buildStatus({ id: 'ghost', status: 'done' }, steps, NOW).ok, 'a step that is not on the roadmap is refused');
+  ok(!L.buildStatus({ id: 'outline', status: 'finished' }, steps, NOW).ok, 'a made-up status is refused');
+  ok(!L.buildStatus({ id: 'outline', status: 'constructor' }, steps, NOW).ok && !L.buildStatus({ id: 'outline', status: 'toString' }, steps, NOW).ok, 'odd status names cannot slip through');
+  ok(!L.buildStatus({ id: '__proto__', status: 'done' }, steps, NOW).ok && !L.buildStatus({}, steps, NOW).ok, 'an odd or missing step id is refused');
+  const board = { items: { process: { status: 'blocked', by: 'Nate', at: ago(9) } }, messages: [{ by: 'Nate', at: ago(5), text: 'keep me' }] };
+  const next = L.setStatus(board, 'outline', r.entry);
+  eq(next.items, { process: { status: 'blocked', by: 'Nate', at: ago(9) }, outline: r.entry }, 'changing one step leaves the other steps alone');
+  eq(next.messages, board.messages, 'and leaves every post alone');
+  ok(!('outline' in board.items), 'the stored board is not modified in place');
+  eq(L.boardOf(null), { items: {}, messages: [] }, 'an empty store reads as an empty board');
+  eq(L.boardOf({ items: [1], messages: 'x' }), { items: {}, messages: [] }, 'a malformed value reads as an empty board, not a crash');
+}
+
+// ---------------------------------------------------------------- the meeting log
+group('The meeting log');
+{
+  let r = L.buildMeeting({ meeting: { title: 'Empty', date: '2026-11-20' } }, NOW);
+  ok(!r.ok && r.status === 400, 'a meeting with nothing in it is refused');
+  r = L.buildMeeting({ meeting: { id: 'mHACKED', at: '1999-01-01T00:00:00Z', date: '2026-11-20', title: '  Weekly   sync ', disc: ' We met. ', decisions: ['  Ship it ', '', null, 7], actionItems: [{ item: ' Send deck ', owner: 'Pat' }, { item: 'No owner' }, { owner: 'Nate' }, 'junk'], prog: '', by: ' Mike ', source: 'ai', evil: 'x' } }, NOW);
+  ok(r.ok, 'a normal meeting is accepted');
+  const m = r.meeting;
+  eq(Object.keys(m), ['id', 'date', 'title', 'disc', 'decisions', 'actionItems', 'prog', 'by', 'at', 'source'], 'it is stored in the same shape as the meetings already in the log');
+  ok(/^m[a-z0-9]{10,}$/.test(m.id) && m.id !== 'mHACKED' && m.at === new Date(NOW).toISOString(), 'the id and the logged time are the server\'s, not the page\'s');
+  eq([m.date, m.title, m.disc, m.by, m.source], ['2026-11-20', 'Weekly sync', 'We met.', 'Mike', 'ai'], 'the fields are cleaned up');
+  eq(m.decisions, ['Ship it', '7'], 'empty decisions are dropped');
+  eq(m.actionItems, [{ item: 'Send deck', owner: 'Pat' }, { item: 'No owner', owner: 'Unassigned' }], 'action items with no text are dropped; a missing owner becomes Unassigned');
+  eq(L.buildMeeting({ meeting: { disc: 'x', date: 'tomorrow' } }, NOW).meeting.date, '2026-11-29', 'a missing or nonsense date becomes today in Mountain time');
+  eq(L.buildMeeting({ meeting: { prog: 'typed by hand' } }, NOW).meeting.source, 'manual', 'anything not marked as AI notes is a hand entry');
+  r = L.buildMeeting({ meeting: { disc: 'x'.repeat(L.MAX_MEETING) } }, NOW);
+  ok(!r.ok && /too long/.test(r.error), 'a meeting too long to store is refused out loud, never cut short');
+  const ids = {}; let clash = 0;
+  for (let i = 0; i < 1000; i++) { const id = L.buildMeeting({ meeting: { disc: 'x' } }, NOW).meeting.id; if (ids[id]) clash++; ids[id] = 1; }
+  eq(clash, 0, '1,000 meetings logged in the same millisecond all get different ids');
+
+  const stored = [{ id: 'm1795394285335', date: '2026-11-21', title: 'Old one', disc: 'kept exactly', decisions: [], actionItems: [], prog: 'p', by: 'Mike', at: ago(8), source: 'manual', legacy: true }];
+  let a = L.addMeeting(stored, m, NOW);
+  eq(a.list[0], stored[0], 'existing meetings are carried over exactly, extra fields and all');
+  eq([a.list.length, stored.length], [2, 1], 'the new meeting is added, and the stored list is not modified in place');
+  const again = L.buildMeeting({ meeting: { date: '2026-11-20', title: 'Weekly sync', disc: 'We met.', decisions: ['Ship it', '7'], actionItems: [{ item: 'Send deck', owner: 'Pat' }, { item: 'No owner' }], by: 'Mike', source: 'ai' } }, NOW + 4000).meeting;
+  const twice = L.addMeeting(a.list, again, NOW + 4000);
+  ok(twice.duplicate && twice.duplicate.id === m.id && !twice.list, 'pressing Add twice does not log the meeting twice');
+  ok(L.addMeeting(a.list, again, NOW + 10 * 60000).list, 'the same meeting entered again ten minutes later is kept (it is deliberate)');
+  let rm = L.removeMeeting(a.list, 'm1795394285335');
+  eq([rm.removed, rm.list.map((x) => x.id), a.list.length], [true, [m.id], 2], 'removing takes out exactly the one asked for');
+  rm = L.removeMeeting(a.list, 'mNOPE');
+  eq([rm.removed, rm.list.length], [false, 2], 'removing one that is already gone changes nothing');
+  eq(L.removeMeeting(a.list, '').removed, false, 'an empty id removes nothing');
+  eq(L.meetingsOf(null), [], 'an empty store reads as an empty log');
+
+  let log = [], n = 0, refused = null;
+  for (; n < 60; n++) {
+    const t = NOW + n * 600000;
+    const out = L.addMeeting(log, L.buildMeeting({ meeting: { disc: 'd'.repeat(20000) + n } }, t).meeting, t);
+    if (!out.list) { refused = out; break; }
+    log = out.list;
+  }
+  ok(refused && refused.full, 'a log that has reached the store\'s size limit refuses the new meeting');
+  ok(log.length === n && L.fits({ meetings: log }), 'and never drops an old one to make room (' + n + ' very long meetings fit; ordinary ones, well over a hundred)');
+}
+
 group('Small helpers');
 {
   eq(L.clip('short', 10), 'short', 'clip leaves short text alone');

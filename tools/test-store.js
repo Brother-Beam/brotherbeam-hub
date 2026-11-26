@@ -167,6 +167,152 @@ group('Auto-clean');
   ok(r.changelogSource === 'site' && r.removed.length === 1 && r.removed[0].id === late.id, 'if the file is not bundled, it falls back to the public copy and still cleans');
 }
 
+// ---- the real endpoints, run against the fake store ---------------------------------
+// Loads api/<name>.js with its two imports pointed at the copies above, and calls it the
+// way Vercel would: handler(req, res).
+async function loadHandler(name) {
+  const s = readFile('api/' + name + '.js')
+    .replace("from './_lib/logic.js'", "from '../api/_lib/logic.js'")
+    .replace("from './_lib/store.js'", "from './.store-under-test.mjs'");
+  writeFile('tools/.' + name + '-under-test.mjs', s);
+  return (await import('./.' + name + '-under-test.mjs')).default;
+}
+function hit(handler, method, body, query) {
+  const res = { code: 0, body: null, headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(c) { this.code = c; return this; }, json(o) { this.body = o; return this; }, send(o) { this.body = o; return this; } };
+  return handler({ method: method, body: body, query: query || {}, headers: {} }, res).then(() => res);
+}
+siteUp = true;
+files = { 'roadmap.json': JSON.stringify({ now: [{ id: 'outline' }], next: [{ id: 'process' }, { id: 'sandbox' }] }), 'whatsnew.json': '{"entries":[],"declined":[]}' };
+
+group('Board endpoint');
+{
+  const board = await loadHandler('board');
+  // What is really in the store today looks like this: posts with no ids, saved by the old page.
+  const oldPosts = [{ by: 'Nate Treadwell', at: '2026-11-24T22:03:00.000Z', text: 'real post one' }, { by: 'Michael FitzGerald', at: '2026-11-22T02:20:00.000Z', text: 'real post two' }];
+  db['beam-progress'] = { value: { items: { outline: { status: 'progress', by: 'someone', at: '2026-11-23T20:00:00.000Z' } }, messages: JSON.parse(JSON.stringify(oldPosts)) }, version: 7 };
+
+  let r = await hit(board, 'GET');
+  eq([r.code, r.body.messages, Object.keys(r.body.items), r.body.sandbox], [200, oldPosts, ['outline'], false], 'GET returns the board exactly as stored');
+  r = await hit(board, 'POST', { action: 'post', by: 'Pat', text: 'hello' });
+  eq([r.code, r.body.ok, r.body.board.messages.length], [201, true, 3], 'a post is added, and the reply carries the whole up-to-date board');
+  eq(db['beam-progress'].value.messages.slice(0, 2), oldPosts, 'the posts that were already there are untouched');
+  r = await hit(board, 'POST', { action: 'post', by: 'Pat', text: 'hello' });
+  eq([r.code, r.body.duplicate, db['beam-progress'].value.messages.length], [200, true, 3], 'a double-click does not post twice');
+  r = await hit(board, 'POST', { action: 'post', by: 'Pat', text: '' });
+  eq(r.code, 400, 'an empty post is refused');
+  r = await hit(board, 'POST', { action: 'status', id: 'process', status: 'blocked', by: 'Nate' });
+  eq([r.code, r.body.board.items.process.status, r.body.board.items.outline.status, r.body.board.messages.length], [200, 'blocked', 'progress', 3], 'a status change touches only its own step');
+  r = await hit(board, 'POST', { action: 'status', id: 'ghost', status: 'done' });
+  eq(r.code, 400, 'a step that is not on the roadmap is refused');
+  r = await hit(board, 'POST', { action: 'wipe' });
+  eq(r.code, 400, 'an unknown action is refused');
+  r = await hit(board, 'POST', { action: 'reset' });
+  eq([r.code, db['beam-progress'].value.messages.length], [400, 3], 'the real board cannot be reset');
+  r = await hit(board, 'PUT', { items: {}, messages: [] });
+  eq([r.code, db['beam-progress'].value.messages.length], [405, 3], 'the whole board cannot be overwritten');
+  r = await hit(board, 'DELETE');
+  eq(r.code, 405, 'nothing can be deleted');
+
+  // The bug this replaces. Pat has the page open; Nate posts; Pat, whose page has not
+  // refreshed, changes a status.
+  db.oldway = { value: { items: {}, messages: [{ by: 'A', at: 't', text: 'already there' }] }, version: 1 };
+  const patsCopy = JSON.parse(JSON.stringify(db.oldway.value));                    // Pat opens the page
+  db.oldway.value.messages.push({ by: 'Nate', at: 't2', text: 'Nate posts' });      // Nate posts
+  patsCopy.items.outline = { status: 'done' };                                      // Pat changes a status...
+  db.oldway.value = patsCopy;                                                       // ...and his page saves its whole copy
+  ok(!db.oldway.value.messages.some((m) => m.text === 'Nate posts'), 'control: the old whole-page save ERASES a post made while your page was open');
+
+  const before = db['beam-progress'].value.messages.length;
+  await hit(board, 'POST', { action: 'post', by: 'Nate', text: 'Nate posts while Pat has the page open' });
+  r = await hit(board, 'POST', { action: 'status', id: 'outline', status: 'done', by: 'Pat' });
+  const now = db['beam-progress'].value;
+  ok(now.messages.some((m) => m.text.indexOf('Nate posts') === 0) && now.items.outline.status === 'done', 'the new way: Pat\'s status change and Nate\'s post both survive');
+  eq(r.body.board.messages.length, before + 1, 'and Pat\'s page is handed the up-to-date board, Nate\'s post included');
+
+  const c0 = conflicts, jobs = [];
+  for (let i = 0; i < 20; i++) jobs.push(hit(board, 'POST', { action: 'post', by: 'P' + (i % 3), text: 'burst ' + i }));
+  ['outline', 'process', 'sandbox'].forEach((id, i) => jobs.push(hit(board, 'POST', { action: 'status', id: id, status: ['todo', 'progress', 'done'][i], by: 'S' + i })));
+  const outs = await Promise.all(jobs);
+  const v = db['beam-progress'].value;
+  ok(outs.every((o) => o.code === 201 || o.code === 200), '20 posts and 3 status changes at the same instant: every one is accepted', outs.map((o) => o.code));
+  eq(v.messages.filter((m) => m.text.indexOf('burst ') === 0).length, 20, 'all 20 posts are on the board');
+  eq([v.items.outline.status, v.items.process.status, v.items.sandbox.status], ['todo', 'progress', 'done'], 'all 3 status changes took');
+  eq(v.messages.slice(0, 2), oldPosts, 'and the original posts are still first, still untouched');
+  ok(conflicts > c0, 'it really was contended (' + (conflicts - c0) + ' collisions caught and retried)');
+
+  const realBefore = JSON.stringify(db['beam-progress']);
+  r = await hit(board, 'POST', { action: 'post', by: 'T', text: 'sandbox post' }, { sandbox: '1' });
+  eq([r.code, db['beam-progress-sandbox'].value.messages.length, JSON.stringify(db['beam-progress']) === realBefore], [201, 1, true], 'sandbox: a post goes to separate storage and the real board is not touched');
+  r = await hit(board, 'POST', { action: 'status', id: 'sandbox', status: 'blocked', by: 'T' }, { sandbox: '1' });
+  eq([r.code, db['beam-progress-sandbox'].value.items.sandbox.status, JSON.stringify(db['beam-progress']) === realBefore], [200, 'blocked', true], 'sandbox: a status change likewise');
+  r = await hit(board, 'GET', null, { sandbox: '1' });
+  eq([r.body.sandbox, r.body.messages.length], [true, 1], 'sandbox: reading shows the sandbox, and says so');
+  r = await hit(board, 'POST', { action: 'reset' }, { sandbox: '1' });
+  eq([r.code, db['beam-progress-sandbox'].value, JSON.stringify(db['beam-progress']) === realBefore], [200, { items: {}, messages: [] }, true], 'sandbox: it can be emptied, and the real board is still untouched');
+}
+
+group('Meetings endpoint');
+{
+  const meetings = await loadHandler('meetings');
+  const real = [
+    { id: 'm1795394285335', date: '2026-11-21', title: 'First Partner Call', disc: 'real one', decisions: ['d'], actionItems: [{ item: 'i', owner: 'All' }], prog: '', by: 'Mike', at: '2026-11-22T00:00:00.000Z', source: 'manual' },
+    { id: 'm1795483143658', date: '2026-11-22', title: 'Second', disc: 'real two', decisions: [], actionItems: [], prog: '', by: 'Mike', at: '2026-11-23T00:00:00.000Z', source: 'ai' },
+  ];
+  db['beam-meetings'] = { value: { meetings: JSON.parse(JSON.stringify(real)) }, version: 4 };
+
+  let r = await hit(meetings, 'GET');
+  eq([r.code, r.body.meetings, r.body.sandbox], [200, real, false], 'GET returns the log exactly as stored');
+  r = await hit(meetings, 'POST', { action: 'add', meeting: { id: 'mHACK', date: '2026-11-25', title: 'By hand', disc: 'talked', prog: 'moved', by: 'Pat' } });
+  ok(r.code === 201 && r.body.meeting.id !== 'mHACK' && r.body.meetings.length === 3, 'a meeting is added, with an id the server chose');
+  eq(db['beam-meetings'].value.meetings.slice(0, 2), real, 'the meetings already logged are untouched');
+  const addedId = r.body.meeting.id;
+  r = await hit(meetings, 'POST', { action: 'add', meeting: { date: '2026-11-25', title: 'By hand', disc: 'talked', prog: 'moved', by: 'Pat' } });
+  eq([r.code, r.body.duplicate, r.body.meeting.id, db['beam-meetings'].value.meetings.length], [200, true, addedId, 3], 'pressing Add twice logs it once');
+  r = await hit(meetings, 'POST', { action: 'add', meeting: { title: 'nothing in it' } });
+  eq(r.code, 400, 'an empty meeting is refused');
+  r = await hit(meetings, 'POST', { action: 'remove' });
+  eq(r.code, 400, 'remove with no id is refused');
+  r = await hit(meetings, 'POST', { action: 'remove', id: 'mNOPE' });
+  eq([r.code, r.body.removed, r.body.meetings.length], [200, false, 3], 'removing one that is not there changes nothing and is not an error');
+  r = await hit(meetings, 'POST', { action: 'remove', id: addedId });
+  eq([r.code, r.body.removed, db['beam-meetings'].value.meetings], [200, true, real], 'removing takes out exactly that meeting and leaves the rest as they were');
+  r = await hit(meetings, 'POST', { action: 'reset' });
+  eq([r.code, db['beam-meetings'].value.meetings.length], [400, 2], 'the real log cannot be reset');
+  r = await hit(meetings, 'PUT', { meetings: [] });
+  eq([r.code, db['beam-meetings'].value.meetings.length], [405, 2], 'the whole log cannot be overwritten');
+
+  // The bug this replaces: Pat removes a meeting on a page that has not refreshed since Nate logged one.
+  db.oldlog = { value: { meetings: [{ id: 'a' }, { id: 'b' }] }, version: 1 };
+  const patsCopy = JSON.parse(JSON.stringify(db.oldlog.value));
+  db.oldlog.value.meetings.push({ id: 'c', title: 'Nate logs a meeting' });
+  patsCopy.meetings = patsCopy.meetings.filter((m) => m.id !== 'a');
+  db.oldlog.value = patsCopy;
+  ok(!db.oldlog.value.meetings.some((m) => m.id === 'c'), 'control: the old whole-page save ERASES a meeting logged while your page was open');
+
+  const c0 = conflicts, jobs = [];
+  for (let i = 0; i < 10; i++) jobs.push(hit(meetings, 'POST', { action: 'add', meeting: { date: '2026-11-26', title: 'Burst ' + i, disc: 'notes ' + i, by: 'P' + (i % 3), source: i % 2 ? 'ai' : 'manual' } }));
+  jobs.push(hit(meetings, 'POST', { action: 'remove', id: real[0].id }));
+  jobs.push(hit(meetings, 'POST', { action: 'remove', id: real[0].id }));
+  const outs = await Promise.all(jobs);
+  const list = db['beam-meetings'].value.meetings;
+  ok(outs.every((o) => o.code === 200 || o.code === 201), '10 meetings logged while two people remove another: every request is accepted', outs.map((o) => o.code));
+  eq(list.filter((m) => /^Burst /.test(m.title)).length, 10, 'all 10 new meetings are saved');
+  ok(!list.some((m) => m.id === real[0].id), 'the removed meeting is gone');
+  eq(list.find((m) => m.id === real[1].id), real[1], 'the meeting nobody touched is exactly as it was');
+  eq(outs.slice(10).filter((o) => o.body.removed).length, 1, 'two people removing the same meeting: it is removed once, and neither sees an error');
+  eq(new Set(list.map((m) => m.id)).size, list.length, 'every meeting has its own id');
+  ok(conflicts > c0, 'it really was contended (' + (conflicts - c0) + ' collisions caught and retried)');
+
+  const realBefore = JSON.stringify(db['beam-meetings']);
+  r = await hit(meetings, 'POST', { action: 'add', meeting: { disc: 'sandbox meeting', by: 'T' } }, { sandbox: '1' });
+  eq([r.code, db['beam-meetings-sandbox'].value.meetings.length, JSON.stringify(db['beam-meetings']) === realBefore], [201, 1, true], 'sandbox: a meeting goes to separate storage and the real log is not touched');
+  r = await hit(meetings, 'POST', { action: 'remove', id: r.body.meeting.id }, { sandbox: '1' });
+  eq([r.body.removed, db['beam-meetings-sandbox'].value.meetings.length, JSON.stringify(db['beam-meetings']) === realBefore], [true, 0, true], 'sandbox: removing likewise');
+  await hit(meetings, 'POST', { action: 'add', meeting: { disc: 'another', by: 'T' } }, { sandbox: '1' });
+  r = await hit(meetings, 'POST', { action: 'reset' }, { sandbox: '1' });
+  eq([r.code, db['beam-meetings-sandbox'].value, JSON.stringify(db['beam-meetings']) === realBefore], [200, { meetings: [] }, true], 'sandbox: it can be emptied, and the real log is still untouched');
+}
+
 group('Store problems are reported, not swallowed');
 {
   const real = globalThis.fetch;

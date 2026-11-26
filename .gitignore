@@ -18,4 +18,4 @@ build/
 _tmp/
 
 # Throwaway copies written by tools/test-store.js
-tools/.store-under-test*.mjs
+tools/.*-under-test*.mjs

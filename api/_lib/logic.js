@@ -111,6 +111,114 @@ export function closedRecords(removed, closed, nowIso) {
   });
 }
 
+// ---------- the board and the meeting log ----------
+// Both used to be saved whole by the browser, so two people acting within the same
+// minute could erase each other. Now the browser sends one small action, and these rules
+// apply it to whatever is stored at that moment. Nothing here ever drops an existing
+// post or meeting to make room: if the store is full, the new one is refused out loud.
+
+export const STORE_LIMIT = 190000;   // the store refuses values over 200,000 characters; stop short of it
+export const MAX_MEETING = 30000;    // characters in one meeting, as stored
+
+export function bodyOf(raw) {
+  if (raw && typeof raw === 'object') return raw;
+  try { const j = JSON.parse(raw || '{}'); return (j && typeof j === 'object') ? j : {}; } catch (e) { return {}; }
+}
+export function fits(value) { return JSON.stringify(value).length <= STORE_LIMIT; }
+function who(x) { return tidy(x).replace(/\s+/g, ' ').slice(0, MAX_NAME) || 'someone'; }
+function isDay(d) { return /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) && !isNaN(Date.parse(d + 'T12:00:00Z')); }
+
+// The board: { items: { [stepId]: { status, by, at } }, messages: [{ by, at, text }] }
+export function boardOf(value) {
+  const v = (value && typeof value === 'object') ? value : {};
+  return {
+    items: (v.items && typeof v.items === 'object' && !Array.isArray(v.items)) ? v.items : {},
+    messages: Array.isArray(v.messages) ? v.messages : [],
+  };
+}
+export function stepIds(roadmap) {
+  const r = roadmap || {};
+  return [].concat(Array.isArray(r.now) ? r.now : [], Array.isArray(r.next) ? r.next : [])
+    .map(function (x) { return x && x.id; }).filter(Boolean).map(String);
+}
+
+export function buildPost(body, nowMs) {
+  const b = bodyOf(body);
+  const text = tidy(b.text);
+  if (!text) return { ok: false, status: 400, error: 'Write your update first.' };
+  if (text.length > MAX_TEXT) return { ok: false, status: 400, error: 'That is ' + text.length + ' characters. Keep a post under ' + MAX_TEXT + ', or split it into two.' };
+  return { ok: true, post: { by: who(b.by), at: new Date(nowMs).toISOString(), text: text } };
+}
+// Adds a post to the end. Existing posts are never touched or reordered.
+export function addPost(board, post, nowMs) {
+  const dup = board.messages.find(function (m) { return m && m.by === post.by && m.text === post.text && nowMs - ms(m.at) < DUPLICATE_MS; });
+  if (dup) return { duplicate: dup };
+  const next = { items: board.items, messages: board.messages.concat([post]) };
+  return fits(next) ? { board: next } : { full: true };
+}
+
+export function buildStatus(body, steps, nowMs) {
+  const b = bodyOf(body);
+  const id = String(b.id || '');
+  if (steps.indexOf(id) < 0) return { ok: false, status: 400, error: 'That step is not on the roadmap any more. Reload the page.' };
+  const status = String(b.status || '');
+  if (!Object.prototype.hasOwnProperty.call(STATUS, status)) return { ok: false, status: 400, error: 'That is not a status the roadmap knows.' };
+  return { ok: true, id: id, entry: { status: status, by: who(b.by), at: new Date(nowMs).toISOString() } };
+}
+// Sets one step's status. Every other step and every post is carried over as it is.
+export function setStatus(board, id, entry) {
+  const items = Object.assign({}, board.items);
+  items[id] = entry;
+  return { items: items, messages: board.messages };
+}
+
+// The meeting log: { meetings: [{ id, date, title, disc, decisions[], actionItems[], prog, by, at, source }] }
+export function meetingsOf(value) { return (value && Array.isArray(value.meetings)) ? value.meetings : []; }
+
+// Builds one meeting from what the page sent. The id and the logged time are always the
+// server's, whatever the page says.
+export function buildMeeting(body, nowMs) {
+  const b = bodyOf(body);
+  const m = (b.meeting && typeof b.meeting === 'object') ? b.meeting : {};
+  const decisions = (Array.isArray(m.decisions) ? m.decisions : []).map(tidy).filter(Boolean);
+  const actionItems = (Array.isArray(m.actionItems) ? m.actionItems : [])
+    .map(function (a) {
+      const o = (a && typeof a === 'object') ? a : {};
+      return { item: tidy(o.item), owner: tidy(o.owner).replace(/\s+/g, ' ').slice(0, MAX_NAME) || 'Unassigned' };
+    })
+    .filter(function (a) { return a.item; });
+  const meeting = {
+    id: 'm' + nowMs.toString(36) + Math.random().toString(36).slice(2, 8).padEnd(6, '0'),
+    date: isDay(m.date) ? String(m.date) : localParts(new Date(nowMs), TZ).date,
+    title: tidy(m.title).replace(/\s+/g, ' ').slice(0, 200),
+    disc: tidy(m.disc), decisions: decisions, actionItems: actionItems, prog: tidy(m.prog),
+    by: who(m.by), at: new Date(nowMs).toISOString(), source: m.source === 'ai' ? 'ai' : 'manual',
+  };
+  if (!meeting.disc && !meeting.prog && !decisions.length && !actionItems.length) {
+    return { ok: false, status: 400, error: 'There is nothing to log yet. Add what was discussed or the progress made.' };
+  }
+  const size = JSON.stringify(meeting).length;
+  if (size > MAX_MEETING) return { ok: false, status: 400, error: 'This meeting is too long to save in one piece (' + size + ' characters; the limit is ' + MAX_MEETING + '). Trim it, or split it into two.' };
+  return { ok: true, meeting: meeting };
+}
+function sameMeeting(a, b) {
+  return a.by === b.by && a.date === b.date && a.title === b.title && a.disc === b.disc && a.prog === b.prog
+    && JSON.stringify(a.decisions || []) === JSON.stringify(b.decisions || [])
+    && JSON.stringify(a.actionItems || []) === JSON.stringify(b.actionItems || []);
+}
+export function addMeeting(list, meeting, nowMs) {
+  const dup = list.find(function (x) { return x && nowMs - ms(x.at) < DUPLICATE_MS && sameMeeting(x, meeting); });
+  if (dup) return { duplicate: dup };
+  const next = list.concat([meeting]);
+  return fits({ meetings: next }) ? { list: next } : { full: true };
+}
+// Removes one meeting by id. Removing one that is already gone changes nothing.
+export function removeMeeting(list, id) {
+  const want = String(id || '');
+  const keep = want ? list.filter(function (x) { return !(x && x.id === want); }) : list;
+  return { list: keep, removed: keep.length !== list.length };
+}
+
 // ---------- schedule: Sunday 6 PM Mountain, once ----------
 
 export const TZ = 'America/Denver';

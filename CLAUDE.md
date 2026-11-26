@@ -49,8 +49,11 @@ Brand: font **Jost**. Tokens per page — paper `#F3F5F7`, ink `#141B22`, muted 
 
 ## Backend (Vercel serverless functions in `api/`)
 
-- `tasks.js` — proxies page state to the store, adding `HUB_API_TOKEN` server side. Used by the pages for `beam-progress` and `beam-meetings` (whole-value, last-write-wins). Refuses the server-managed keys below.
+- `board.js` — the RoadMap page's state. `GET` returns `{ items, messages }`; `POST { action: 'post', by, text }` adds a board post; `POST { action: 'status', id, status, by }` sets one roadmap step's status (the id must exist in `roadmap.json`).
+- `meetings.js` — the meeting log. `GET` returns `{ meetings }`; `POST { action: 'add', meeting }` appends one (the server assigns its `id` and `at`); `POST { action: 'remove', id }` takes one out.
 - `feedback.js` — the suggestions queue. `GET` returns `{ open, count }` after auto-clean; `POST { by, text, page }` adds one. Browsers can only read and add.
+
+No page ever sends a whole stored value back. Every page sends one small action, the endpoint applies it with `kvUpdate()` to whatever is stored at that moment, and replies with the up-to-date value, which the page then shows. That is what makes it safe for the three of them to use the hub at the same time. There is deliberately no generic "save this key" endpoint any more (the old `api/tasks.js` was removed): do not add one, and do not make a page keep state that it later writes back.
 - `digest.js` — the weekly email (below).
 - `parse-notes.js` — sends pasted meeting notes to the Anthropic API and returns `{title, discussed, decisions[], actionItems[{item,owner}]}`. Env: `ANTHROPIC_API_KEY`. Model `claude-opus-5-5`.
 - `blob-upload.js` / `blob-list.js` / `blob-delete.js` / `blob-get.js` — the Library's file store on **Vercel Blob**. Env: `BLOB_READ_WRITE_TOKEN`.
@@ -60,24 +63,28 @@ Brand: font **Jost**. Tokens per page — paper `#F3F5F7`, ink `#141B22`, muted 
 
 | Key | Shape | Written by |
 |---|---|---|
-| `beam-progress` | `{ items: { [stepId]: { status, by, at } }, messages: [{ by, at, text }] }` | `progress.html` through `tasks.js` |
-| `beam-meetings` | `{ meetings: [{ id, date, title, disc, decisions[], actionItems[], prog, by, at, source }] }` | `meetings.html` through `tasks.js` |
+| `beam-progress` | `{ items: { [stepId]: { status, by, at } }, messages: [{ by, at, text }] }` | `board.js` only |
+| `beam-meetings` | `{ meetings: [{ id, date, title, disc, decisions[], actionItems[], prog, by, at, source }] }` | `meetings.js` only |
 | `beam-feedback` | `{ feedback: [{ id, by, at, text, page }] }` — open suggestions only | `feedback.js` only |
 | `beam-feedback-closed` | `{ closed: [{ id, by, outcome, closedAt }] }` — a tally, never the text | auto-clean only |
 | `beam-digest-state` | `{ lastSent, lastSentAt, lastCounts, lastError, lastTest, claim }` | `digest.js` only |
+| `beam-progress-sandbox`, `beam-meetings-sandbox` | same shapes as the real two | `board.js` / `meetings.js` with `?sandbox=1` (test data only) |
 
-The store has **versioned writes** (see `../api/CLAUDE.md`). Anything server-side that reads a value, changes it and writes it back must go through `kvUpdate(key, change)`, which retries on a version conflict. Never write the three server-managed keys any other way. `change()` may run more than once, so it must be free of side effects that add up.
+The store has **versioned writes** (see `../api/CLAUDE.md`). Every write to every key goes through `kvUpdate(key, change)`, which reads, applies the change, writes with the version it read, and retries on a conflict. Never write a key any other way. `change()` may run more than once, so it must be free of side effects that add up.
 
-Known gap, not yet fixed: `beam-progress` and `beam-meetings` are still saved whole by the browser, so two people editing within the same ~45 seconds can overwrite each other. Fixing it means moving those writes behind server endpoints that use `kvUpdate`, the way suggestions work.
+Nothing is ever dropped to make room. Each value has to fit the store's 200 KB limit (`STORE_LIMIT` in `logic.js` stops at 190,000 characters); when a board post or a meeting would not fit, it is refused with a message telling them to ask Mike. That is a long way off (hundreds of ordinary posts, well over a hundred meetings), but when it comes the fix is to move older entries to an archive key, not to raise the limit or trim silently.
+
+What the pages keep in `localStorage` (`bb-progress-local`, `bb-meetings-local`) is only the last copy the server sent, shown if the server cannot be reached. It is never used to save.
 
 ## The weekly email
 
 Every **Sunday at 6:00 PM Mountain**, `digest.js` emails the three founders the week in the hub: where the roadmap stands, meetings logged (with decisions and action items), files added to the Library, board posts, new What's-new entries, and the state of the suggestions queue.
 
 - **Schedule.** `vercel.json` has two cron slots, Monday 00:00 and 01:00 UTC, because cron is UTC and Mountain time moves with daylight saving. `decide()` checks Mountain time itself and sends in the 6 PM hour. It claims the day in `beam-digest-state` before sending (so two runs cannot both send) and records `lastSent` after; on failure it releases the claim so the next slot retries. To change the day or hour, change `SEND_WEEKDAY` / `SEND_HOURS` in `logic.js` **and** the cron slots, then run the tests.
-- **Environment (Vercel).** `CRON_SECRET` (any long random string; nothing sends without it), `DIGEST_TO` (comma-separated recipients, Mike first; kept here and **never in this public repo**), and one way to send: `GMAIL_USER` + `GMAIL_APP_PASSWORD`, or `RESEND_API_KEY` + `DIGEST_FROM` (needs a domain verified at Resend). Env changes need a redeploy.
+- **Environment (Vercel): two settings.** `DIGEST_TO` (comma-separated recipients, Mike first; kept here and **never in this public repo**) and `GMAIL_APP_PASSWORD` (a Google app password for the first address in `DIGEST_TO`, which is the account it sends from). Optional: `GMAIL_USER` to send from a different Gmail account; `RESEND_API_KEY` + `DIGEST_FROM` to send through Resend from a verified domain instead; `CRON_SECRET` for strict mode. Env changes need a redeploy.
+- **Why no secret is needed by default.** The scheduled run can only send this week's email, once, inside the Sunday 6-8 PM Mountain window; outside it does nothing. So an open call has nothing to abuse. With `CRON_SECRET` set, the scheduled run requires it too (Vercel Cron sends it automatically).
 - **Checking it** (no secret needed): `/api/digest?status=1` shows what is configured, what is missing and when it last sent. `/api/digest?preview=1&pw=scooter` renders the email as it would look now. `/api/digest?dry=1&pw=scooter&now=2026-11-30T01:05:00Z` says whether the scheduler would send at that moment. None of these send.
-- **Sending by hand** needs the secret (`&secret=…`): `?test=1` sends only to the first address in `DIGEST_TO`; `?force=1` sends to everyone now. Sending real email to the founders is Mike's call; ask first.
+- **Sending by hand.** `?test=1&pw=scooter` sends only to the first address in `DIGEST_TO` (Mike), at most once every 10 minutes. `?force=1&secret=…` sends to everyone now and always needs `CRON_SECRET`. Sending real email to the founders is Mike's call; ask first.
 
 ## Tests (run before every deploy)
 
@@ -92,6 +99,10 @@ $JSC -m tools/test-store.js     # read-change-write under load, and auto-clean a
 
 Each prints `ALL n CHECKS PASSED` or names what failed. `tools/` is excluded from the deployed site by `.vercelignore`. If you change a rule in `logic.js`, change or add the test that pins it.
 
+### Testing the board and the meeting log on the live site
+
+Board posts cannot be deleted and meetings are the company's record, so never test with the real ones. Both endpoints and both pages have a sandbox: add `?sandbox=1` (`/api/board?sandbox=1`, `/api/meetings?sandbox=1`, `progress.html?sandbox=1`, `meetings.html?sandbox=1`). Everything then reads and writes separate keys, the page shows a red "Sandbox" bar, and `POST { action: 'reset' }` empties the sandbox when you are done (it is refused outside the sandbox). The sandbox runs the same code against the same store, so it proves the real thing.
+
 ### Testing the queue on the live site
 
 To check the queue for real, send suggestions under a name ending in **`(testing)`** (for example `Claude (testing)`), with text starting `TEST`. They are stored, shown in the queue and cleared by auto-clean exactly like real ones, but `isTestEntry()` keeps them out of the weekly email's counts, so a test can never reach the founders' inboxes. Clear them the real way: put their ids under `declined` in `whatsnew.json` and deploy; once `/api/feedback` shows them gone, take the ids back out of `declined` in the next commit so the file stays tidy. `/api/digest?preview=1&pw=scooter&format=json&tests=1` counts test data too, which is how to confirm the tally was written. Never mark a suggestion `declined` unless it is test data or Mike said to pass on it.
@@ -104,7 +115,7 @@ To check the queue for real, send suggestions under a name ending in **`(testing
 
 ## Deploy
 
-Run the three test commands. Push to `main` → Vercel deploys in about a minute. Env vars live in Vercel; the store's token lives in Railway. Never commit a secret, an email address, or the deploy-hook URL. After a push, check the live site at `https://brotherbeam-hub.vercel.app`, and for anything touching the queue or the email, check `/api/feedback` and `/api/digest?status=1` too.
+Run the three test commands. Push to `main` → Vercel deploys in about a minute. Env vars live in Vercel; the store's token lives in Railway. Never commit a secret, an email address, or the deploy-hook URL. After a push, check the live site at `https://brotherbeam-hub.vercel.app`, and for anything touching saved data or the email, check `/api/board`, `/api/meetings`, `/api/feedback` and `/api/digest?status=1` too.
 
 ## The other repo
 

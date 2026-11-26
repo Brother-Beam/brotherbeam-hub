@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "id": "safe-to-use-together",
+      "at": "2026-11-26T16:40:00Z",
+      "title": "Safe to use at the same time",
+      "what": "If two of us post on the board, change a roadmap status, or log or remove a meeting at the same moment, everything now saves. Before, whoever saved second could quietly wipe out what the other had just added.",
+      "suggestedBy": "",
+      "resolves": []
+    },
+    {
       "id": "whats-new",
       "at": "2026-11-26T15:31:00Z",
       "title": "What's new",

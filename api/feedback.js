@@ -8,13 +8,8 @@
 // built or declined (see reconcileSuggestions in _lib/store.js). Every write goes
 // through a versioned read-change-write, so two people sending at the same moment
 // both land.
-import { buildSuggestion, addSuggestion, listOf } from './_lib/logic.js';
+import { bodyOf, buildSuggestion, addSuggestion, listOf } from './_lib/logic.js';
 import { kvUpdate, reconcileSuggestions, storeReady } from './_lib/store.js';
-
-function parseBody(req) {
-  if (req.body && typeof req.body === 'object') return req.body;
-  try { return JSON.parse(req.body || '{}'); } catch (e) { return {}; }
-}
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -29,7 +24,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       const now = Date.now();
-      const made = buildSuggestion(parseBody(req), now);
+      const made = buildSuggestion(bodyOf(req.body), now);
       if (!made.ok) { res.status(made.status).json({ error: made.error }); return; }
       let outcome = {};
       const saved = await kvUpdate('beam-feedback', function (v) {

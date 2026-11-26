@@ -17,7 +17,7 @@ export async function kvGet(key) {
   if (!r.ok) throw new Error('store read failed (HTTP ' + r.status + ')');
   const j = await r.json();
   if (typeof j.version !== 'number') throw new Error('the store does not report versions; deploy brotherbeam-api');
-  return { value: j.value, version: j.version };
+  return { value: j.value, version: j.version, updatedAt: j.updated_at || null };
 }
 
 // Writes only if the key is still at the version we read. ok:false means someone else wrote first.

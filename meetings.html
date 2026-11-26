@@ -124,6 +124,7 @@
             <textarea id="m-disc" placeholder="What we discussed" style="min-height:52px"></textarea>
             <textarea id="m-prog" placeholder="Progress made / decisions / who owns what" style="min-height:52px"></textarea>
             <button class="go" id="add-btn" type="button" style="margin-top:0">Add by hand</button>
+            <p class="pstat" id="mstat" style="margin-top:0"></p>
           </div>
         </details>
       </div>
@@ -136,15 +137,32 @@
 
     <script>
       (function () {
+        // ?sandbox=1 points this page at separate test storage (see the endpoint's header).
+        // Nothing done on a sandbox page touches the real data.
+        var SANDBOX = /[?&]sandbox=1(&|$)/.test(location.search);
+        if (SANDBOX) {
+          var flag = document.createElement('div');
+          flag.textContent = 'Sandbox: test data only. Nothing on this page touches the real meeting log.';
+          flag.style.cssText = 'background:#B3382C;color:#fff;font-size:12px;letter-spacing:.06em;text-align:center;padding:8px 12px;';
+          document.body.insertBefore(flag, document.body.firstChild);
+        }
+        var API = '/api/meetings' + (SANDBOX ? '?sandbox=1' : '');
         start();
 
         function start() {
-          var KEY = 'beam-meetings', LKEY = 'bb-meetings-local', NKEY = 'bb-meetings-name';
-          var state = { meetings: [] }, online = false, timer = null;
+          var LKEY = 'bb-meetings-local' + (SANDBOX ? '-sandbox' : ''), NKEY = 'bb-meetings-name';
+          // What this page shows is a copy of what the server last sent. The page never sends
+          // the log back. It sends "add this meeting" or "remove that one", the server applies
+          // it to whatever is stored at that moment, and replies with the up-to-date log. So
+          // two of us logging or removing at once cannot erase each other's meetings.
+          // The copy kept in localStorage is only for showing something if the server cannot
+          // be reached; it is never used to save.
+          var state = { meetings: [] }, sending = 0, stamp = 0, parsed = null;
           var tl = document.getElementById('timeline'), syncEl = document.getElementById('sync');
           var aiDateEl = document.getElementById('ai-date'), notesEl = document.getElementById('notes'), nameEl = document.getElementById('name'), parseBtn = document.getElementById('parse-btn'), pstat = document.getElementById('pstat');
-          var mDateEl = document.getElementById('m-date'), mTitleEl = document.getElementById('m-title'), mDiscEl = document.getElementById('m-disc'), mProgEl = document.getElementById('m-prog');
-          function today() { try { return new Date().toISOString().slice(0,10); } catch (e) { return ''; } }
+          var mDateEl = document.getElementById('m-date'), mTitleEl = document.getElementById('m-title'), mDiscEl = document.getElementById('m-disc'), mProgEl = document.getElementById('m-prog'), addBtn = document.getElementById('add-btn'), mstat = document.getElementById('mstat');
+          // Today on this device's own calendar (not UTC, which is already tomorrow in the evening here).
+          function today() { var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; }; return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); }
           aiDateEl.value = today(); mDateEl.value = today();
           try { nameEl.value = localStorage.getItem(NKEY) || localStorage.getItem('bb-progress-name') || ''; } catch (e) {}
           nameEl.addEventListener('change', function () { try { localStorage.setItem(NKEY, nameEl.value.trim()); } catch (e) {} });
@@ -153,6 +171,8 @@
           function esc(x) { return String(x==null?'':x).replace(/[&<>"']/g, function (c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
           function ownClass(o) { return ['Nate','Pat','Mike','All','Unassigned'].indexOf(o) >= 0 ? 'own-'+o : 'own-Unassigned'; }
           function fmtDate(d) { try { var p=String(d).split('-'); return new Date(p[0], p[1]-1, p[2]).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'}); } catch(e){ return esc(d); } }
+          function sync(text, isErr) { syncEl.textContent = text; syncEl.className = 'sync' + (isErr ? ' err' : ''); }
+          function say(el, text, isErr) { el.textContent = text; el.className = 'pstat' + (isErr ? ' err' : ''); }
 
           function render() {
             var ms = (state.meetings||[]).slice().sort(function (a,b){ return (b.date||'').localeCompare(a.date||''); });
@@ -169,51 +189,104 @@
             }).join('');
             tl.querySelectorAll('.rm').forEach(function (btn){ btn.addEventListener('click', function(){ remove(btn.getAttribute('data-id')); }); });
           }
+          function show(list) {
+            state = { meetings: list || [] };
+            try { localStorage.setItem(LKEY, JSON.stringify(state)); } catch (e) {}
+            render();
+          }
 
-          function addMeeting(m) { state.meetings = (state.meetings||[]).concat([m]); save(); render(); }
-          function remove(id) { if (!window.confirm('Remove this meeting from the timeline?')) return; state.meetings = (state.meetings||[]).filter(function (m){ return m.id !== id; }); save(); render(); }
+          // One request. Resolves with the reply; rejects with a message a person can read.
+          function ask(body) {
+            return fetch(API, body ? { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body) } : { cache:'no-store' })
+              .then(function (r) {
+                return r.json().catch(function () { return {}; }).then(function (j) {
+                  if (!r.ok) throw new Error((j && j.error) || ('The server said ' + r.status + '.'));
+                  return j;
+                });
+              }, function () { throw new Error('Could not reach the server.'); });
+          }
+
+          // Send one change. On success the server's reply replaces what is shown. On failure
+          // nothing changes on screen except a message, and whatever was typed stays put.
+          function send(body) {
+            sending++; stamp++;
+            sync('saving\u2026');
+            return ask(body).then(function (j) {
+              sending--;
+              show(j.meetings);
+              sync('saved');
+              return j;
+            }, function (e) {
+              sending--;
+              sync('not saved: ' + e.message, true);
+              throw e;
+            });
+          }
+          // Pull the latest. Skipped while a change is on its way up: that reply is newer.
+          function load() {
+            if (sending) return;
+            var mine = stamp;
+            ask().then(function (j) {
+              if (mine !== stamp || sending) return;
+              show(j.meetings);
+              sync('shared');
+            }, function (e) {
+              if (mine !== stamp) return;
+              var cached = false;
+              if (!state.meetings.length) {
+                try { var c = JSON.parse(localStorage.getItem(LKEY)); if (c && c.meetings) { state = { meetings:c.meetings }; cached = true; } } catch (x) {}
+                render();
+              }
+              sync('cannot reach the shared log: ' + e.message + (cached ? ' Showing the last copy saved on this device.' : ''), true);
+            });
+          }
+
+          function remove(id) {
+            if (!window.confirm('Remove this meeting from the timeline?')) return;
+            send({ action:'remove', id:id }).catch(function () { /* the status line already says why */ });
+          }
 
           function parse() {
             var notes = (notesEl.value||'').trim(); if (!notes) { notesEl.focus(); return; }
-            pstat.className = 'pstat'; pstat.textContent = 'Parsing the notes with Claude…'; parseBtn.disabled = true;
-            fetch('/api/parse-notes', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ notes: notes }) })
-              .then(function (r){ return r.json().then(function (j){ return { ok:r.ok, status:r.status, j:j }; }); })
-              .then(function (res){
-                parseBtn.disabled = false;
-                if (!res.ok) { pstat.className = 'pstat err'; pstat.textContent = (res.j && res.j.error) || ('error ' + res.status); return; }
-                var j = res.j;
-                addMeeting({ id:'m'+Date.now(), date: aiDateEl.value || today(), title: j.title||'', disc: j.discussed||'', decisions: j.decisions||[], actionItems: j.actionItems||[], prog:'', by: me(), at:new Date().toISOString(), source:'ai' });
-                notesEl.value = ''; pstat.className = 'pstat'; pstat.textContent = 'Added to the timeline.';
-              })
-              .catch(function (e){ parseBtn.disabled = false; pstat.className = 'pstat err'; pstat.textContent = 'Could not parse (' + e.message + ').'; });
+            parseBtn.disabled = true;
+            var reading;
+            if (parsed && parsed.notes === notes) {
+              reading = Promise.resolve(parsed.result);     // already read; only the save failed last time
+            } else {
+              say(pstat, 'Parsing the notes with Claude\u2026');
+              reading = fetch('/api/parse-notes', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ notes: notes }) })
+                .then(function (r) {
+                  return r.json().catch(function () { return {}; }).then(function (j) {
+                    if (!r.ok) throw new Error((j && j.error) || ('error ' + r.status));
+                    return j;
+                  });
+                }, function () { throw new Error('Could not reach the parser. Check your connection and try again.'); })
+                .then(function (j) { parsed = { notes: notes, result: j }; return j; });
+            }
+            reading.then(function (j) {
+              say(pstat, 'Saving it to the timeline\u2026');
+              return send({ action:'add', meeting:{ date: aiDateEl.value || today(), title: j.title||'', disc: j.discussed||'', decisions: j.decisions||[], actionItems: j.actionItems||[], prog:'', by: me(), source:'ai' } })
+                .then(function () { notesEl.value = ''; parsed = null; say(pstat, 'Added to the timeline.'); },
+                      function (e) { throw new Error('The notes were read, but saving failed. ' + e.message + ' Your notes are still here: press the button again and it will save without reading them a second time.'); });
+            }).catch(function (e) { say(pstat, e.message, true); })
+              .then(function () { parseBtn.disabled = false; });
           }
           function addManual() {
             var disc = (mDiscEl.value||'').trim(), prog = (mProgEl.value||'').trim();
             if (!disc && !prog) { mDiscEl.focus(); return; }
-            addMeeting({ id:'m'+Date.now(), date: mDateEl.value || today(), title:(mTitleEl.value||'').trim(), disc:disc, decisions:[], actionItems:[], prog:prog, by: me(), at:new Date().toISOString(), source:'manual' });
-            mTitleEl.value=''; mDiscEl.value=''; mProgEl.value='';
+            addBtn.disabled = true;
+            say(mstat, 'Saving\u2026');
+            send({ action:'add', meeting:{ date: mDateEl.value || today(), title:(mTitleEl.value||'').trim(), disc:disc, decisions:[], actionItems:[], prog:prog, by: me(), source:'manual' } })
+              .then(function () { mTitleEl.value=''; mDiscEl.value=''; mProgEl.value=''; say(mstat, 'Added to the timeline.'); },
+                    function (e) { say(mstat, 'Not saved. ' + e.message + ' What you typed is still here.', true); })
+              .then(function () { addBtn.disabled = false; });
           }
 
-          function save() {
-            try { localStorage.setItem(LKEY, JSON.stringify(state)); } catch (e) {}
-            clearTimeout(timer);
-            timer = setTimeout(function () {
-              timer=null; syncEl.textContent='saving…'; syncEl.className='sync';
-              fetch('/api/tasks?key='+KEY, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({value:state}) })
-                .then(function (r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-                .then(function (){ online=true; syncEl.textContent='saved'; syncEl.className='sync'; })
-                .catch(function (e){ online=false; syncEl.textContent='not saved to shared ('+e.message+')'; syncEl.className='sync err'; });
-            }, 500);
-          }
-          function load() {
-            fetch('/api/tasks?key='+KEY).then(function (r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-              .then(function (j){ online=true; if (j&&j.value&&j.value.meetings){ state={meetings:j.value.meetings}; try{localStorage.setItem(LKEY,JSON.stringify(state));}catch(e){} } syncEl.textContent='shared'; syncEl.className='sync'; render(); })
-              .catch(function (e){ online=false; try{ state=JSON.parse(localStorage.getItem(LKEY))||state; }catch(x){} syncEl.textContent='shared board unreachable ('+e.message+')'; syncEl.className='sync err'; render(); });
-          }
           parseBtn.addEventListener('click', parse);
-          document.getElementById('add-btn').addEventListener('click', addManual);
+          addBtn.addEventListener('click', addManual);
           render(); load();
-          setInterval(function(){ if (online && !timer) load(); }, 45000);
+          setInterval(function () { if (!document.hidden) load(); }, 45000);
+          document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
         }
       })();
     </script>

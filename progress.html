@@ -169,6 +169,17 @@
 
     <script>
       (function () {
+        // ?sandbox=1 points this page at separate test storage (see the endpoint's header).
+        // Nothing done on a sandbox page touches the real data.
+        var SANDBOX = /[?&]sandbox=1(&|$)/.test(location.search);
+        if (SANDBOX) {
+          var flag = document.createElement('div');
+          flag.textContent = 'Sandbox: test data only. Nothing on this page touches the real board.';
+          flag.style.cssText = 'background:#B3382C;color:#fff;font-size:12px;letter-spacing:.06em;text-align:center;padding:8px 12px;';
+          document.body.insertBefore(flag, document.body.firstChild);
+        }
+        var API = '/api/board' + (SANDBOX ? '?sandbox=1' : '');
+
         // The roadmap itself lives in roadmap.json, so this page and the weekly email
         // always describe the same steps. To change the roadmap, edit that file.
         fetch('roadmap.json', { cache:'no-store' })
@@ -178,57 +189,104 @@
 
         function start(NOW, NEXT) {
           var STATUS = [['todo','Not started'],['progress','In progress'],['blocked','Blocked'],['done','Done']];
-          var KEY = 'beam-progress', LKEY = 'bb-progress-local', NKEY = 'bb-progress-name';
-          var state = { items:{}, messages:[] }, online = false, timer = null;
-          var nowEl = document.getElementById('now-list'), nextEl = document.getElementById('next-list'), feedEl = document.getElementById('feed'), syncEl = document.getElementById('sync'), nameEl = document.getElementById('name'), textEl = document.getElementById('text');
+          var LKEY = 'bb-progress-local' + (SANDBOX ? '-sandbox' : ''), NKEY = 'bb-progress-name';
+          // What this page shows is a copy of what the server last sent. The page never sends
+          // that copy back. Each change goes up as one small action (a post, or one step's
+          // status), the server applies it to whatever is stored at that moment, and replies
+          // with the up-to-date board. So two of us acting at once cannot erase each other.
+          // The copy kept in localStorage is only for showing something if the server cannot
+          // be reached; it is never used to save.
+          var state = { items:{}, messages:[] }, sending = 0, stamp = 0, failed = null;
+          var nowEl = document.getElementById('now-list'), nextEl = document.getElementById('next-list'), feedEl = document.getElementById('feed'), syncEl = document.getElementById('sync'), nameEl = document.getElementById('name'), textEl = document.getElementById('text'), postBtn = document.getElementById('postbtn');
           try { nameEl.value = localStorage.getItem(NKEY) || ''; } catch (e) {}
           nameEl.addEventListener('change', function () { try { localStorage.setItem(NKEY, nameEl.value.trim()); } catch (e) {} });
           function me() { return (nameEl.value || '').trim() || 'someone'; }
           function esc(x) { return String(x==null?'':x).replace(/[&<>"']/g, function (c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
           function when(iso) { if (!iso) return ''; try { var d=new Date(iso); return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}); } catch(e){ return ''; } }
-          function it(id) { return state.items[id] = state.items[id] || { status:'todo' }; }
-          function allItems() { return NOW.concat(NEXT); }
-          function title(id) { var a=allItems(); for (var i=0;i<a.length;i++) if (a[i].id===id) return a[i].t; return id; }
-          function label(v) { for (var i=0;i<STATUS.length;i++) if (STATUS[i][0]===v) return STATUS[i][1]; return v; }
+          function it(id) { return state.items[id] || { status:'todo' }; }
+          function sync(text, isErr) { syncEl.textContent = text; syncEl.className = 'sync' + (isErr ? ' err' : ''); }
 
           function card(x, isNow) {
             var s = it(x.id);
             var opts = STATUS.map(function (o){ return '<option value="'+o[0]+'"'+(s.status===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('');
-            var stamp = s.at ? 'Updated by <b style="color:var(--ink);font-weight:500">'+esc(s.by||'someone')+'</b><br>'+esc(when(s.at)) : 'Not touched yet';
+            var stampHtml = s.at ? 'Updated by <b style="color:var(--ink);font-weight:500">'+esc(s.by||'someone')+'</b><br>'+esc(when(s.at)) : 'Not touched yet';
+            if (failed && failed.id === x.id) stampHtml = '<span style="color:var(--warn)">Not saved. '+esc(failed.msg)+' Pick it again to retry.</span>';
             return '<div class="item '+(isNow?'now ':'')+'s-'+esc(s.status)+'" style="--c:var(--'+x.c+')">'
               + '<div><div class="owner">'+esc(x.own)+'</div><div class="tt">'+esc(x.t)+'</div><div class="td">'+esc(x.d)+'</div></div>'
-              + '<div class="ctl"><select data-status="'+x.id+'">'+opts+'</select><div class="stamp">'+stamp+'</div></div></div>';
+              + '<div class="ctl"><select data-status="'+x.id+'">'+opts+'</select><div class="stamp">'+stampHtml+'</div></div></div>';
           }
           function render() {
             nowEl.innerHTML = NOW.map(function (x){ return card(x, true); }).join('');
             nextEl.innerHTML = NEXT.map(function (x){ return card(x, false); }).join('');
             feedEl.innerHTML = (state.messages||[]).slice().reverse().map(function (m){ return '<div class="msg"><div class="m-h"><b>'+esc(m.by)+'</b> &middot; '+esc(when(m.at))+'</div><div class="m-t">'+esc(m.text)+'</div></div>'; }).join('') || '<div class="empty">No posts yet. Be the first to say where we are at.</div>';
-            document.querySelectorAll('[data-status]').forEach(function (el){ el.addEventListener('change', function(){ var s=it(el.dataset.status); s.status=el.value; s.by=me(); s.at=new Date().toISOString(); save(); render(); }); });
+            document.querySelectorAll('[data-status]').forEach(function (el) {
+              el.addEventListener('change', function () { el.disabled = true; send({ action:'status', id:el.dataset.status, status:el.value, by:me() }); });
+            });
+          }
+          function show(board) {
+            state = { items:(board && board.items) || {}, messages:(board && board.messages) || [] };
+            try { localStorage.setItem(LKEY, JSON.stringify(state)); } catch (e) {}
+            render();
+          }
+
+          // One request. Resolves with the reply; rejects with a message a person can read.
+          function ask(body) {
+            return fetch(API, body ? { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body) } : { cache:'no-store' })
+              .then(function (r) {
+                return r.json().catch(function () { return {}; }).then(function (j) {
+                  if (!r.ok) throw new Error((j && j.error) || ('The server said ' + r.status + '.'));
+                  return j;
+                });
+              }, function () { throw new Error('Could not reach the server.'); });
+          }
+
+          // Send one change. On success the server's reply replaces what is shown. On failure
+          // nothing changes on screen except a message, and whatever was typed stays put.
+          function send(body, done) {
+            sending++; stamp++;
+            sync('saving\u2026');
+            ask(body).then(function (j) {
+              sending--; failed = null;
+              show(j.board);
+              sync('saved \u00b7 ' + when(new Date().toISOString()));
+              if (done) done(true);
+            }, function (e) {
+              sending--;
+              failed = body.action === 'status' ? { id:body.id, msg:e.message } : null;
+              render();
+              sync('not saved: ' + e.message, true);
+              if (done) done(false);
+            });
+          }
+          // Pull the latest. Skipped while a change is on its way up: that reply is newer.
+          function load() {
+            if (sending) return;
+            var mine = stamp;
+            ask().then(function (j) {
+              if (mine !== stamp || sending) return;
+              show(j);
+              sync('shared \u00b7 ' + (j.updatedAt ? when(j.updatedAt) : 'nothing yet'));
+            }, function (e) {
+              if (mine !== stamp) return;
+              var cached = false;
+              if (!state.messages.length && !Object.keys(state.items).length) {
+                try { var c = JSON.parse(localStorage.getItem(LKEY)); if (c) { state = { items:c.items || {}, messages:c.messages || [] }; cached = true; } } catch (x) {}
+                render();
+              }
+              sync('cannot reach the shared board: ' + e.message + (cached ? ' Showing the last copy saved on this device.' : ''), true);
+            });
           }
           function post() {
-            var t = (textEl.value||'').trim(); if (!t) return;
-            state.messages = (state.messages||[]).concat([{ by:me(), at:new Date().toISOString(), text:t }]).slice(-200);
-            textEl.value=''; save(); render();
+            var t = (textEl.value || '').trim();
+            if (!t) { textEl.focus(); return; }
+            postBtn.disabled = true;
+            send({ action:'post', by:me(), text:t }, function (ok) { postBtn.disabled = false; if (ok) textEl.value = ''; });
           }
-          function save() {
-            try { localStorage.setItem(LKEY, JSON.stringify(state)); } catch (e) {}
-            clearTimeout(timer);
-            timer = setTimeout(function () {
-              timer=null; syncEl.textContent='saving…'; syncEl.className='sync';
-              fetch('/api/tasks?key='+KEY, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({value:state}) })
-                .then(function (r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-                .then(function (){ online=true; syncEl.textContent='saved · '+when(new Date().toISOString()); syncEl.className='sync'; })
-                .catch(function (e){ online=false; syncEl.textContent='not saved to shared ('+e.message+')'; syncEl.className='sync err'; });
-            }, 500);
-          }
-          function load() {
-            fetch('/api/tasks?key='+KEY).then(function (r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-              .then(function (j){ online=true; if (j&&j.value&&(j.value.items||j.value.messages)){ state={items:j.value.items||{},messages:j.value.messages||[]}; try{localStorage.setItem(LKEY,JSON.stringify(state));}catch(e){} } syncEl.textContent='shared · '+(j&&j.updated_at?when(j.updated_at):'none yet'); syncEl.className='sync'; render(); })
-              .catch(function (e){ online=false; try{ state=JSON.parse(localStorage.getItem(LKEY))||state; }catch(x){} syncEl.textContent='shared board unreachable ('+e.message+')'; syncEl.className='sync err'; render(); });
-          }
-          document.getElementById('postbtn').addEventListener('click', post);
+
+          postBtn.addEventListener('click', post);
           render(); load();
-          setInterval(function(){ if (online && !timer) load(); }, 45000);
+          setInterval(function () { if (!document.hidden) load(); }, 45000);
+          document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
         }
       })();
     </script>
