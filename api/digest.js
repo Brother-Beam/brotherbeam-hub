@@ -9,23 +9,34 @@
 //   year. Before sending it claims the week in the store, so two runs can never both
 //   send; if a send fails the claim is released and the next slot tries again.
 //
+// Setting it up: two Vercel environment variables
+//   DIGEST_TO            who gets it, comma-separated, Mike first. The first address is
+//                        also the Gmail account it is sent from, and where tests go.
+//                        Kept here, not in the repo, because the repo is public.
+//   GMAIL_APP_PASSWORD   a Google "app password" for that first address. It lets the hub
+//                        send as that account and nothing else.
+//   Optional
+//   GMAIL_USER           send from a different Gmail account than the first recipient.
+//   RESEND_API_KEY + DIGEST_FROM   send through Resend from a verified domain instead of Gmail.
+//   CRON_SECRET          turns on strict mode (below) and allows force-sends.
+//
 // What you can call
 //   /api/digest?status=1                 open. Is it set up, when did it last send. No secrets, no addresses.
 //   /api/digest?preview=1&pw=...         the email as it would look right now. Sends nothing.
 //       &format=text | &format=json      the plain-text version, or just the subject and counts
 //   /api/digest?dry=1&pw=...&now=ISO     would the scheduler send at that moment? Sends nothing.
-//   /api/digest            + the secret  the scheduled run (what cron calls)
-//   /api/digest?test=1     + the secret  send it now to the FIRST address in DIGEST_TO only
-//   /api/digest?force=1    + the secret  send it now to everyone, whatever the day
-//   "the secret" is CRON_SECRET, as "Authorization: Bearer ..." (how Vercel Cron sends it) or &secret=...
+//   /api/digest?test=1&pw=...            send it now to the FIRST address in DIGEST_TO only (at most
+//                                        once every 10 minutes; no limit with the secret)
+//   /api/digest                          the scheduled run (what cron calls)
+//   /api/digest?force=1 + the secret     send it now to everyone, whatever the day
 //
-// Vercel environment variables
-//   CRON_SECRET          any long random string. Nothing sends until this is set.
-//   DIGEST_TO            the recipients, comma-separated. Put Mike first (tests go to the first one).
-//                        They live here, not in the repo, because the repo is public.
-//   and ONE way to send:
-//   GMAIL_USER + GMAIL_APP_PASSWORD   a Gmail address and an app password for it, or
-//   RESEND_API_KEY + DIGEST_FROM      a Resend key and a sender on a domain verified there
+// Why the scheduled run needs no secret by default
+//   It only ever does one thing: send this week's email, once, and only inside the Sunday
+//   6-8 PM Mountain window. Calling it at any other time does nothing, and calling it
+//   inside the window just sends the email that was about to go anyway. So there is
+//   nothing for a stranger to abuse. Setting CRON_SECRET makes it strict regardless: the
+//   scheduled run then needs the secret too (Vercel Cron sends it automatically as
+//   "Authorization: Bearer ..."). Sending to everyone on demand (force) always needs it.
 import { timingSafeEqual } from 'node:crypto';
 import { list } from '@vercel/blob';
 import { compose, decide, localParts, parseRecipients, SCHEDULE_TEXT, TZ } from './_lib/logic.js';
@@ -34,14 +45,18 @@ import { kvGet, kvUpdate, loadSiteJson, reconcileSuggestions, storeReady } from 
 export const config = { maxDuration: 60 };
 
 const STATE = 'beam-digest-state';
-const HUB_PW = 'scooter';   // the Library's convenience lock; here it only guards the read-only preview
+const HUB_PW = 'scooter';            // the Library's convenience lock; here it guards the preview and the test send
+const TEST_GAP_MS = 10 * 60 * 1000;  // password-triggered tests: one every 10 minutes
 
+function recipients() { return parseRecipients(process.env.DIGEST_TO); }
+function gmailUser() { return String(process.env.GMAIL_USER || recipients()[0] || '').trim(); }
 function provider() {
   if (process.env.RESEND_API_KEY && process.env.DIGEST_FROM) return 'resend';
-  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) return 'gmail';
+  if (process.env.GMAIL_APP_PASSWORD && gmailUser()) return 'gmail';
   return null;
 }
 
+function hasSecret() { return !!process.env.CRON_SECRET; }
 function authorized(req) {
   const secret = process.env.CRON_SECRET || '';
   if (!secret) return false;
@@ -52,6 +67,8 @@ function authorized(req) {
 
 function sleep(n) { return new Promise(function (r) { setTimeout(r, n); }); }
 function short(x) { return String(x == null ? '' : x).slice(0, 300); }
+// Error text from a mail service can name an address. Without the secret, callers get it with addresses masked.
+function redact(x) { return short(x).replace(/[^\s<>"',;:()]+@[^\s<>"',;:()]+/g, '[address]'); }
 function pad(n) { return (n < 10 ? '0' : '') + n; }
 
 async function libraryFiles() {
@@ -92,7 +109,7 @@ async function sendOnce(to, subject, html, text) {
     // Loaded here, not at the top: a mail library must never be able to stop this file loading.
     const mod = await import('nodemailer');
     const nodemailer = mod.default || mod;
-    const user = String(process.env.GMAIL_USER).trim();
+    const user = gmailUser();
     const transport = nodemailer.createTransport({
       host: 'smtp.gmail.com', port: 465, secure: true,
       auth: { user: user, pass: String(process.env.GMAIL_APP_PASSWORD).replace(/\s+/g, '') },
@@ -116,12 +133,11 @@ async function send(to, subject, html, text) {
 }
 
 async function status(req, res, now) {
-  const to = parseRecipients(process.env.DIGEST_TO);
+  const to = recipients();
   const which = provider();
   const missing = [];
-  if (!process.env.CRON_SECRET) missing.push('CRON_SECRET');
   if (!to.length) missing.push('DIGEST_TO');
-  if (!which) missing.push('GMAIL_USER and GMAIL_APP_PASSWORD (or RESEND_API_KEY and DIGEST_FROM)');
+  if (!which) missing.push('GMAIL_APP_PASSWORD');
   let state = {}, storeOk = storeReady();
   if (storeOk) { try { state = (await kvGet(STATE)).value || {}; } catch (e) { storeOk = false; } }
   // Can the Gmail route's mail library be loaded here? Loads it, connects to nothing.
@@ -133,7 +149,7 @@ async function status(req, res, now) {
     ready: missing.length === 0 && storeOk,
     schedule: SCHEDULE_TEXT,
     mountainTimeNow: local.weekday + ' ' + local.date + ' ' + pad(local.hour) + ':' + pad(local.minute),
-    configured: { cronSecret: !!process.env.CRON_SECRET, sendsWith: which, recipients: to.length, store: storeOk, library: !!process.env.BLOB_READ_WRITE_TOKEN, mailLibrary: mailLibrary },
+    configured: { recipients: to.length, sendsWith: which, strictMode: hasSecret(), store: storeOk, library: !!process.env.BLOB_READ_WRITE_TOKEN, mailLibrary: mailLibrary },
     missing: missing,
     lastSent: state.lastSent || null,
     lastSentAt: state.lastSentAt || null,
@@ -150,9 +166,12 @@ export default async function handler(req, res) {
   try {
     if (q.status === '1') { await status(req, res, now); return; }
 
+    const pwOk = String(q.pw || '').toLowerCase() === HUB_PW;
+    const secretOk = authorized(req);
+
     // Read-only views. They never send anything.
     if (q.preview === '1' || q.dry === '1') {
-      if (String(q.pw || '').toLowerCase() !== HUB_PW) { res.status(401).json({ error: 'unauthorized' }); return; }
+      if (!pwOk) { res.status(401).json({ error: 'unauthorized' }); return; }
       if (!storeReady()) { res.status(503).json({ error: 'the shared store is not set up' }); return; }
       if (q.dry === '1') {
         const at = q.now ? new Date(String(q.now)) : now;
@@ -170,22 +189,36 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Everything below can send email, so it needs the secret.
-    if (!authorized(req)) { res.status(401).json({ error: 'unauthorized' }); return; }
+    const isTest = q.test === '1', force = q.force === '1';
+
+    // Who may do what. A test goes only to the first recipient, so the hub password is enough.
+    // Sending to everyone on demand always needs the secret. The scheduled run needs it only
+    // in strict mode; otherwise the Sunday-window and once-a-week checks below are the guard.
+    if (isTest) { if (!secretOk && !pwOk) { res.status(401).json({ error: 'unauthorized' }); return; } }
+    else if (force) { if (!secretOk) { res.status(401).json({ error: 'unauthorized: force needs CRON_SECRET' }); return; } }
+    else if (hasSecret() && !secretOk) { res.status(401).json({ error: 'unauthorized' }); return; }
+
     if (!storeReady()) { res.status(503).json({ error: 'the shared store is not set up' }); return; }
-    const to = parseRecipients(process.env.DIGEST_TO);
+    const to = recipients();
     const which = provider();
     if (!to.length || !which) { res.status(503).json({ error: 'email is not set up yet; see /api/digest?status=1 for what is missing' }); return; }
 
-    if (q.test === '1') {
+    if (isTest) {
+      // Mark the attempt first, so a password-triggered test cannot be repeated in a burst.
+      let tooSoon = false;
+      await kvUpdate(STATE, function (s) {
+        const cur = s || {};
+        tooSoon = !secretOk && cur.lastTest && now.getTime() - Date.parse(cur.lastTest.at) < TEST_GAP_MS;
+        return tooSoon ? undefined : Object.assign({}, cur, { lastTest: { at: now.toISOString(), ok: null } });
+      });
+      if (tooSoon) { res.status(429).json({ error: 'A test was sent in the last 10 minutes. Check the inbox, or try again shortly.' }); return; }
       const c = compose(await gather(), now.getTime());
       const sent = await send([to[0]], '[Test] ' + c.subject, c.html, c.text);
       await kvUpdate(STATE, function (s) { return Object.assign({}, s || {}, { lastTest: { at: now.toISOString(), ok: sent.ok, error: sent.ok ? null : short(sent.error) } }); });
-      res.status(sent.ok ? 200 : 502).json({ ok: sent.ok, test: true, sentTo: 1, sendsWith: which, counts: c.counts, error: sent.ok ? undefined : sent.error });
+      res.status(sent.ok ? 200 : 502).json({ ok: sent.ok, test: true, sentTo: 1, sendsWith: which, counts: c.counts, error: sent.ok ? undefined : (secretOk ? sent.error : redact(sent.error)) });
       return;
     }
 
-    const force = q.force === '1';
     const local = localParts(now, TZ);
 
     // Claim today before doing anything slow. Of two runs at the same moment, exactly one wins.
@@ -220,7 +253,7 @@ export default async function handler(req, res) {
       }
       return next;
     });
-    res.status(sent.ok ? 200 : 502).json({ ok: sent.ok, sentTo: sent.ok ? to.length : 0, sendsWith: which, counts: c ? c.counts : null, error: sent.ok ? undefined : sent.error });
+    res.status(sent.ok ? 200 : 502).json({ ok: sent.ok, sentTo: sent.ok ? to.length : 0, sendsWith: which, counts: c ? c.counts : null, error: sent.ok ? undefined : (secretOk ? sent.error : redact(sent.error)) });
   } catch (e) {
     res.status(500).json({ error: short((e && e.message) || e) });
   }
