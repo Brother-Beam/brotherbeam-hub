@@ -19,16 +19,6 @@
       * { box-sizing:border-box; }
       html, body { margin:0; }
       body { background:var(--paper); color:var(--ink); font-family:var(--font); font-weight:400; line-height:1.55; letter-spacing:.005em; -webkit-font-smoothing:antialiased; }
-      body.locked > *:not(#gate) { display:none; }
-
-      .gate { position:fixed; inset:0; background:var(--ink); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50; }
-      .gate form { width:100%; max-width:340px; background:var(--surface); border-radius:8px; padding:28px 26px; display:flex; flex-direction:column; gap:12px; }
-      .gate .brand { font-weight:400; letter-spacing:.24em; text-transform:uppercase; font-size:15px; }
-      .gate .k { font-size:10px; font-weight:500; letter-spacing:.3em; text-transform:uppercase; color:var(--faint); }
-      .gate label { font-size:11px; font-weight:500; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
-      .gate input { font:inherit; font-size:16px; padding:11px 13px; border:1px solid var(--line); border-radius:6px; }
-      .gate button { font:inherit; font-weight:500; letter-spacing:.14em; text-transform:uppercase; font-size:12px; background:var(--ink); color:#fff; border:0; border-radius:999px; padding:12px; cursor:pointer; }
-      .gate .err { font-size:12px; color:var(--warn); min-height:15px; margin:0; }
 
       .bar { background:var(--ink); color:rgba(255,255,255,.72); font-size:11px; letter-spacing:.16em; text-transform:uppercase; }
       .bar .in { max-width:760px; margin:0 auto; display:flex; justify-content:space-between; align-items:center; gap:10px 18px; flex-wrap:wrap; padding:11px max(16px,env(safe-area-inset-right,0px)) 11px max(16px,env(safe-area-inset-left,0px)); }
@@ -76,6 +66,15 @@
       .msg .m-h { font-size:12px; color:var(--faint); letter-spacing:.04em; } .msg .m-h b { color:var(--ink); font-weight:500; }
       .msg .m-t { font-size:14px; margin-top:4px; white-space:pre-wrap; }
       .empty { color:var(--faint); font-size:13px; padding:10px 0; }
+
+      .fb-note { font-size:13px; color:var(--muted); margin:0 0 6px; max-width:62ch; } .fb-note b { color:var(--ink); font-weight:500; }
+      .fb-list { margin-top:10px; display:flex; flex-direction:column; gap:10px; }
+      .fb-card { background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--ochre); border-radius:8px; box-shadow:var(--shadow); padding:14px 16px; }
+      .fb-top { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; font-size:11px; color:var(--faint); letter-spacing:.04em; }
+      .fb-top b { color:var(--ink); font-weight:500; font-size:12px; }
+      .fb-pg { margin-left:auto; text-transform:uppercase; letter-spacing:.12em; font-size:10px; color:var(--ochre); border:1px solid currentColor; border-radius:999px; padding:2px 8px; white-space:nowrap; }
+      .fb-body { font-size:14px; color:var(--ink); margin-top:8px; white-space:pre-wrap; overflow-wrap:anywhere; }
+      .fb-empty { color:var(--faint); font-size:13px; padding:10px 0; }
 
       .foot { margin-top:40px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); }
       @media (max-width:680px) { .item { grid-template-columns:1fr; } }
@@ -129,55 +128,39 @@
         <div class="feed" id="feed"></div>
       </div>
 
-      <style>
-        .fb-list { margin-top:10px; display:flex; flex-direction:column; gap:10px; }
-        .fb-card { background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--ochre); border-radius:8px; box-shadow:var(--shadow); padding:14px 16px; }
-        .fb-top { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; font-size:11px; color:var(--faint); letter-spacing:.04em; }
-        .fb-top b { color:var(--ink); font-weight:500; }
-        .fb-pg { text-transform:uppercase; letter-spacing:.12em; font-size:10px; color:var(--ochre); border:1px solid currentColor; border-radius:999px; padding:2px 8px; }
-        .fb-body { font-size:14px; color:var(--ink); margin-top:8px; white-space:pre-wrap; }
-        .fb-rm { margin-left:auto; background:none; border:0; cursor:pointer; color:var(--faint); font-size:12px; font-family:inherit; }
-        .fb-rm:hover { color:var(--warn); }
-        .fb-empty { color:var(--faint); font-size:13px; padding:10px 0; }
-      </style>
-      <div class="sec">
-        <div class="sec-h"><p class="label">Suggestions &middot; feedback from the team</p><span class="sync" id="fb-sync">loading&hellip;</span></div>
-        <p style="font-size:13px;color:var(--muted);margin:0 0 6px">What the three of us dropped in the <b style="color:var(--ink);font-weight:500">Suggest a change</b> box on any page. Once it&rsquo;s built &mdash; or we decide against it &mdash; hit <b style="color:var(--ink);font-weight:500">remove</b> to clear it out.</p>
-        <div class="fb-list" id="fb-list"></div>
+      <div class="sec" id="suggestions">
+        <div class="sec-h"><p class="label">Suggestions for the hub</p><span class="sync" id="fb-sync">loading&hellip;</span></div>
+        <p class="fb-note">What the three of us have sent from the <b>Suggest a change</b> box at the bottom of any page. Mike works through these. Nothing here needs tidying: each one clears itself the moment its change is live, or once we decide to pass on it.</p>
+        <div class="fb-list" id="fb-list"><div class="fb-empty">Loading&hellip;</div></div>
       </div>
       <script>
+        // The suggestions queue, read-only. /api/feedback returns what is still open and
+        // clears finished ones itself, so there is nothing to remove from here.
         (function () {
-          var KEY = 'beam-feedback';
           var listEl = document.getElementById('fb-list'), syncEl = document.getElementById('fb-sync');
-          if (!listEl) return;
-          var items = [];
-          function esc(x){ return String(x==null?'':x).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
-          function when(iso){ if(!iso)return''; try{var d=new Date(iso);return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}catch(e){return'';} }
-          function render(){
-            if(!items.length){ listEl.innerHTML='<div class="fb-empty">No suggestions right now. They land here when someone uses the Suggest a change box on any page.</div>'; return; }
-            listEl.innerHTML = items.slice().sort(function(a,b){return (b.at||'').localeCompare(a.at||'');}).map(function(f){
-              return '<div class="fb-card"><div class="fb-top"><b>'+esc(f.by||'someone')+'</b> &middot; '+esc(when(f.at))+(f.page?' <span class="fb-pg">'+esc(f.page)+'</span>':'')+'<button class="fb-rm" data-id="'+esc(f.id)+'">remove</button></div><div class="fb-body">'+esc(f.text)+'</div></div>';
+          var PAGES = { guide:'Guide', index:'Our Vision', progress:'Our RoadMap', documents:'Our Library', meetings:'Meeting Minutes', build:'How I built this', hub:'The hub' };
+          var loading = false;
+          function esc(x) { return String(x==null?'':x).replace(/[&<>"']/g, function (c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+          function when(iso) { if (!iso) return ''; try { var d=new Date(iso); return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}); } catch(e){ return ''; } }
+          function render(items) {
+            if (!items.length) { listEl.innerHTML = '<div class="fb-empty">Nothing open. When one of us sends a suggestion from the box at the bottom of any page, it appears here.</div>'; return; }
+            listEl.innerHTML = items.map(function (f) {
+              return '<div class="fb-card"><div class="fb-top"><b>'+esc(f.by||'someone')+'</b> &middot; '+esc(when(f.at))+'<span class="fb-pg">'+esc(PAGES[f.page]||'The hub')+'</span></div><div class="fb-body">'+esc(f.text)+'</div></div>';
             }).join('');
-            listEl.querySelectorAll('.fb-rm').forEach(function(b){ b.addEventListener('click', function(){ remove(b.getAttribute('data-id')); }); });
           }
-          function save(){
-            syncEl.textContent='saving…'; syncEl.className='sync';
-            return fetch('/api/tasks?key='+KEY, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({value:{feedback:items}}) })
-              .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-              .then(function(){ syncEl.textContent='shared'; syncEl.className='sync'; })
-              .catch(function(e){ syncEl.textContent='not saved ('+e.message+')'; syncEl.className='sync err'; });
-          }
-          function remove(id){
-            if(!window.confirm('Remove this suggestion? Do this once it’s built or you’ve decided against it.')) return;
-            items = items.filter(function(f){ return f.id !== id; }); render(); save();
-          }
-          function load(){
-            fetch('/api/tasks?key='+KEY).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-              .then(function(j){ items = (j && j.value && j.value.feedback) ? j.value.feedback : []; syncEl.textContent='shared'; syncEl.className='sync'; render(); })
-              .catch(function(e){ syncEl.textContent='unreachable ('+e.message+')'; syncEl.className='sync err'; render(); });
+          function load() {
+            if (loading) return;
+            loading = true;
+            fetch('/api/feedback', { cache:'no-store' })
+              .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error((j && j.error) || ('HTTP ' + r.status)); return j; }); })
+              .then(function (j) { var open = (j && j.open) || []; render(open); syncEl.textContent = open.length ? open.length + ' open' : 'all clear'; syncEl.className = 'sync'; })
+              .catch(function (e) { syncEl.textContent = 'could not load'; syncEl.className = 'sync err'; if (!listEl.querySelector('.fb-card')) listEl.innerHTML = '<div class="fb-empty">'+esc(e.message)+'</div>'; })
+              .then(function () { loading = false; });
           }
           load();
-          setInterval(load, 45000);
+          setInterval(function () { if (!document.hidden) load(); }, 60000);
+          document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
+          window.addEventListener('hub:suggestion', load);   // hub.js fires this when the box below sends one
         })();
       </script>
 
@@ -186,17 +169,14 @@
 
     <script>
       (function () {
-        start();
+        // The roadmap itself lives in roadmap.json, so this page and the weekly email
+        // always describe the same steps. To change the roadmap, edit that file.
+        fetch('roadmap.json', { cache:'no-store' })
+          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(function (rm) { start((rm && rm.now) || [], (rm && rm.next) || []); })
+          .catch(function (e) { var s = document.getElementById('sync'); s.textContent = 'could not load the roadmap (' + e.message + ')'; s.className = 'sync err'; });
 
-        function start() {
-          // ===== The roadmap: current deliverable, then what comes after =====
-          var NOW = [
-            { id:'outline', own:'Pat', c:'good', t:'Outline a deliverable', d:'Draft what a real deliverable looks like using a make-believe engagement: the problem, what we do, what the client walks away with. This is the thing everything else is built on.' }
-          ];
-          var NEXT = [
-            { id:'process', own:'All three', c:'ink', t:'Develop the process', d:'From Pat’s outline, define how we actually run a deliverable end to end: the steps, who does what, what the client has to give us.' },
-            { id:'sandbox', own:'All three', c:'ink', t:'Put together the sandbox offer', d:'A deliverable offer for a sandbox partner: what we can help with, scoped tight and priced small, to get a first paid rep and learn what it is worth.' }
-          ];
+        function start(NOW, NEXT) {
           var STATUS = [['todo','Not started'],['progress','In progress'],['blocked','Blocked'],['done','Done']];
           var KEY = 'beam-progress', LKEY = 'bb-progress-local', NKEY = 'bb-progress-name';
           var state = { items:{}, messages:[] }, online = false, timer = null;
@@ -252,57 +232,6 @@
         }
       })();
     </script>
-      <!-- Suggest a change: shared feedback box, on every page. Saves to beam-feedback via /api/tasks. -->
-    <style>
-      .fbk-wrap { max-width:760px; margin:0 auto; padding:0 max(18px,env(safe-area-inset-left,0px)) 56px; font-family:var(--font,sans-serif); }
-      .fbk { background:var(--surface,#fff); border:1px solid var(--line,#DDE3E9); border-top:3px solid var(--accent,#1F5EFF); border-radius:8px; box-shadow:var(--shadow,0 10px 30px -18px rgba(20,27,34,.3)); padding:18px 20px; }
-      .fbk-lab { font-size:10px; font-weight:500; letter-spacing:.2em; text-transform:uppercase; color:var(--faint,#98A4B0); margin:0 0 4px; }
-      .fbk-hint { font-size:12.5px; color:var(--muted,#5A6775); margin:0 0 13px; }
-      .fbk-row { display:flex; gap:10px; align-items:center; margin-bottom:11px; }
-      .fbk-name { font:inherit; font-size:13px; padding:8px 11px; border:1px solid var(--line,#DDE3E9); border-radius:6px; width:150px; background:var(--surface,#fff); color:var(--ink,#141B22); }
-      .fbk-as { font-size:12px; color:var(--faint,#98A4B0); }
-      .fbk-text { font:inherit; font-size:14px; padding:10px 12px; border:1px solid var(--line,#DDE3E9); border-radius:6px; min-height:70px; resize:vertical; width:100%; background:var(--surface,#fff); color:var(--ink,#141B22); }
-      .fbk-go { font:inherit; font-weight:500; letter-spacing:.12em; text-transform:uppercase; font-size:12px; background:var(--ink,#141B22); color:#fff; border:0; border-radius:999px; padding:11px 24px; cursor:pointer; margin-top:12px; }
-      .fbk-go[disabled] { opacity:.55; cursor:default; }
-      .fbk-stat { font-size:12.5px; color:var(--good,#0FA37F); margin-top:10px; min-height:17px; }
-      .fbk-stat.err { color:var(--warn,#B3382C); }
-    </style>
-    <section class="fbk-wrap" aria-label="Suggest a change">
-      <div class="fbk">
-        <p class="fbk-lab">Suggest a change</p>
-        <p class="fbk-hint">See something off, or want something added or changed? Drop it here. Mike reviews these and makes the change &mdash; you never have to touch anything technical.</p>
-        <div class="fbk-row"><input class="fbk-name" id="fbk-name" placeholder="your name" autocomplete="off" /><span class="fbk-as">posting as</span></div>
-        <textarea class="fbk-text" id="fbk-text" placeholder="e.g. On the Vision page, change the tagline to&hellip;"></textarea>
-        <button class="fbk-go" id="fbk-go" type="button">Send to Mike</button>
-        <p class="fbk-stat" id="fbk-stat"></p>
-      </div>
-    </section>
-    <script>
-      (function () {
-        var KEY = 'beam-feedback', NKEY = 'bb-progress-name';
-        var nameEl = document.getElementById('fbk-name'), textEl = document.getElementById('fbk-text'), btn = document.getElementById('fbk-go'), stat = document.getElementById('fbk-stat');
-        if (!btn) return;
-        try { nameEl.value = localStorage.getItem(NKEY) || ''; } catch (e) {}
-        nameEl.addEventListener('change', function () { try { localStorage.setItem(NKEY, nameEl.value.trim()); } catch (e) {} });
-        function pg() { var p = (location.pathname.split('/').pop() || 'index.html').replace(/\.html$/, ''); return p || 'index'; }
-        function send() {
-          var t = (textEl.value || '').trim(); if (!t) { textEl.focus(); return; }
-          var by = (nameEl.value || '').trim() || 'someone';
-          try { if (by !== 'someone') localStorage.setItem(NKEY, by); } catch (e) {}
-          btn.disabled = true; stat.className = 'fbk-stat'; stat.textContent = 'Sending\u2026';
-          var entry = { id: 'f' + Date.now(), by: by, at: new Date().toISOString(), text: t, page: pg() };
-          fetch('/api/tasks?key=' + KEY).then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (j) {
-              var list = (j && j.value && j.value.feedback) ? j.value.feedback : [];
-              list = list.concat([entry]).slice(-300);
-              return fetch('/api/tasks?key=' + KEY, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ value: { feedback: list } }) });
-            })
-            .then(function (r) { if (!r || !r.ok) throw new Error(r ? 'HTTP ' + r.status : 'no response'); return r.json(); })
-            .then(function () { btn.disabled = false; textEl.value = ''; stat.className = 'fbk-stat'; stat.textContent = 'Sent \u2014 Mike will see this. Thanks!'; })
-            .catch(function (e) { btn.disabled = false; stat.className = 'fbk-stat err'; stat.textContent = 'Could not send (' + e.message + '). Try again.'; });
-        }
-        btn.addEventListener('click', send);
-      })();
-    </script>
-</body>
+    <script src="hub.js" defer></script>
+  </body>
 </html>

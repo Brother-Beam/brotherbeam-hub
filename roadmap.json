@@ -1,0 +1,27 @@
+{
+  "now": [
+    {
+      "id": "outline",
+      "own": "Pat",
+      "c": "good",
+      "t": "Outline a deliverable",
+      "d": "Draft what a real deliverable looks like using a make-believe engagement: the problem, what we do, what the client walks away with. This is the thing everything else is built on."
+    }
+  ],
+  "next": [
+    {
+      "id": "process",
+      "own": "All three",
+      "c": "ink",
+      "t": "Develop the process",
+      "d": "From Pat’s outline, define how we actually run a deliverable end to end: the steps, who does what, what the client has to give us."
+    },
+    {
+      "id": "sandbox",
+      "own": "All three",
+      "c": "ink",
+      "t": "Put together the sandbox offer",
+      "d": "A deliverable offer for a sandbox partner: what we can help with, scoped tight and priced small, to get a first paid rep and learn what it is worth."
+    }
+  ]
+}

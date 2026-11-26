@@ -1,0 +1,21 @@
+{
+  "entries": [
+    {
+      "id": "whats-new",
+      "at": "2026-11-26T15:31:00Z",
+      "title": "What's new",
+      "what": "This list. Whenever something is added to the hub it shows up here with what it does, and a dot appears next to Guide in the menu until you have seen it.",
+      "suggestedBy": "Nate",
+      "resolves": []
+    },
+    {
+      "id": "suggest-a-change",
+      "at": "2026-11-26T15:30:00Z",
+      "title": "Suggest a change, from any page",
+      "what": "There is a box at the bottom of every page. Write what you want changed or added and send it. It lands in the queue on Our RoadMap, where all three of us can see it. Mike builds it, and it clears itself from the queue once it is done or we decide to pass.",
+      "suggestedBy": "Nate",
+      "resolves": []
+    }
+  ],
+  "declined": []
+}

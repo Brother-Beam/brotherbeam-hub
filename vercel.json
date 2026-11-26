@@ -1,5 +1,10 @@
 {
   "crons": [
-    { "path": "/api/digest", "schedule": "0 1 * * 1" }
-  ]
+    { "path": "/api/digest?slot=a", "schedule": "0 0 * * 1" },
+    { "path": "/api/digest?slot=b", "schedule": "0 1 * * 1" }
+  ],
+  "functions": {
+    "api/feedback.js": { "includeFiles": "{whatsnew,roadmap}.json" },
+    "api/digest.js": { "includeFiles": "{whatsnew,roadmap}.json" }
+  }
 }

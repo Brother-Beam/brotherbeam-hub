@@ -1,162 +1,223 @@
-// Weekly Sunday email digest for the Beam hub.
+// The weekly email: every Sunday at 6:00 PM Mountain, a summary of the week in the hub
+// goes to the three founders. What is new, meetings logged, files added to the Library,
+// board posts, where the roadmap stands, and the state of the suggestions queue.
 //
-// Summarizes the past 7 days — new features (What's new), meetings logged,
-// documents added to the Library, and roadmap activity — and emails the three
-// founders a short "here's our week" summary. Triggered by a Vercel Cron on
-// Sunday evening (see vercel.json); can also be run by hand with the secret.
+// How it runs
+//   Two Vercel Cron slots call this each week (vercel.json), an hour apart, because cron
+//   only speaks UTC and Mountain time shifts with daylight saving. This function checks
+//   Mountain time itself and sends in the 6 PM hour, so the email arrives at 6 PM all
+//   year. Before sending it claims the week in the store, so two runs can never both
+//   send; if a send fails the claim is released and the next slot tries again.
 //
-// Vercel environment variables (Project -> Settings -> Environment Variables):
-//   CRON_SECRET     Vercel adds "Authorization: Bearer <CRON_SECRET>" to cron
-//                   calls. We require it, so the endpoint is closed until it is set.
-//   RESEND_API_KEY  Resend API key. Without it, the endpoint composes but never sends.
-//   DIGEST_FROM     Verified sender, e.g. "Beam <hub@yourdomain.com>".
-//   DIGEST_TO       Comma-separated recipients. Kept out of this public repo on purpose.
-//   HUB_API_BASE / HUB_API_TOKEN   the same shared store the hub uses.
-//   BLOB_READ_WRITE_TOKEN          to count Library files (optional).
+// What you can call
+//   /api/digest?status=1                 open. Is it set up, when did it last send. No secrets, no addresses.
+//   /api/digest?preview=1&pw=...         the email as it would look right now. Sends nothing.
+//       &format=text | &format=json      the plain-text version, or just the subject and counts
+//   /api/digest?dry=1&pw=...&now=ISO     would the scheduler send at that moment? Sends nothing.
+//   /api/digest            + the secret  the scheduled run (what cron calls)
+//   /api/digest?test=1     + the secret  send it now to the FIRST address in DIGEST_TO only
+//   /api/digest?force=1    + the secret  send it now to everyone, whatever the day
+//   "the secret" is CRON_SECRET, as "Authorization: Bearer ..." (how Vercel Cron sends it) or &secret=...
 //
-// Useful by hand (needs the secret):
-//   /api/digest?secret=XXX&preview=1   -> renders the email as a web page, sends nothing
-//   /api/digest?secret=XXX             -> composes and sends to DIGEST_TO
-//   add &days=14 to widen the window.
+// Vercel environment variables
+//   CRON_SECRET          any long random string. Nothing sends until this is set.
+//   DIGEST_TO            the recipients, comma-separated. Put Mike first (tests go to the first one).
+//                        They live here, not in the repo, because the repo is public.
+//   and ONE way to send:
+//   GMAIL_USER + GMAIL_APP_PASSWORD   a Gmail address and an app password for it, or
+//   RESEND_API_KEY + DIGEST_FROM      a Resend key and a sender on a domain verified there
+import { timingSafeEqual } from 'node:crypto';
 import { list } from '@vercel/blob';
+import { compose, decide, localParts, parseRecipients, SCHEDULE_TEXT, TZ } from './_lib/logic.js';
+import { kvGet, kvUpdate, loadSiteJson, reconcileSuggestions, storeReady } from './_lib/store.js';
 
 export const config = { maxDuration: 60 };
 
-const BASE = (process.env.HUB_API_BASE || '').replace(/\/+$/, '');
-const TOKEN = process.env.HUB_API_TOKEN || '';
-const SITE = 'https://brotherbeam-hub.vercel.app';
+const STATE = 'beam-digest-state';
+const HUB_PW = 'scooter';   // the Library's convenience lock; here it only guards the read-only preview
 
-function ms(x) { const n = Date.parse(x); return isNaN(n) ? 0 : n; }
-function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
-function fmtDay(t) { try { return new Date(t).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return ''; } }
+function provider() {
+  if (process.env.RESEND_API_KEY && process.env.DIGEST_FROM) return 'resend';
+  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) return 'gmail';
+  return null;
+}
 
-async function kv(key) {
-  if (!BASE || !TOKEN) return null;
+function authorized(req) {
+  const secret = process.env.CRON_SECRET || '';
+  if (!secret) return false;
+  const given = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '') || String((req.query && req.query.secret) || '');
+  const a = Buffer.from(given), b = Buffer.from(secret);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function sleep(n) { return new Promise(function (r) { setTimeout(r, n); }); }
+function short(x) { return String(x == null ? '' : x).slice(0, 300); }
+function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+async function libraryFiles() {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return null;
   try {
-    const r = await fetch(BASE + '/api/kv/' + key, { headers: { accept: 'application/json', authorization: 'Bearer ' + TOKEN } });
-    if (!r.ok) return null;
-    const j = await r.json();
-    return (j && j.value) || null;
-  } catch (e) { return null; }
+    let all = [], cursor;
+    for (let i = 0; i < 10; i++) {
+      const page = await list(cursor ? { cursor: cursor } : undefined);
+      all = all.concat(page.blobs || []);
+      if (!page.hasMore || !page.cursor) break;
+      cursor = page.cursor;
+    }
+    return all;
+  } catch (e) { return null; }   // the email says the Library count is unknown rather than guessing zero
 }
 
-// Pure: turns the gathered data into { subject, html, counts }. Exported for local tests.
-export function compose(data, days) {
-  const span = Math.max(1, days || 7);
-  const cut = Date.now() - span * 24 * 60 * 60 * 1000;
-
-  const feats = (((data.whatsnew || {}).entries) || []).filter(function (e) { return ms(e.at) >= cut; }).sort(function (a, b) { return ms(b.at) - ms(a.at); });
-  const meetings = (((data.meetings || {}).meetings) || []).filter(function (m) { return (ms(m.at) || ms(m.date)) >= cut; }).sort(function (a, b) { return (ms(b.at) || ms(b.date)) - (ms(a.at) || ms(a.date)); });
-  const posts = (((data.progress || {}).messages) || []).filter(function (p) { return ms(p.at) >= cut; }).sort(function (a, b) { return ms(b.at) - ms(a.at); });
-  const items = ((data.progress || {}).items) || {};
-  const moves = Object.keys(items).map(function (k) { return items[k]; }).filter(function (s) { return s && ms(s.at) >= cut; });
-  const files = (data.files || []).filter(function (f) { return ms(f.uploadedAt) >= cut; }).sort(function (a, b) { return ms(b.uploadedAt) - ms(a.uploadedAt); });
-  const openFb = (((data.feedback || {}).feedback) || []).length;
-
-  const counts = { features: feats.length, meetings: meetings.length, files: files.length, posts: posts.length, moves: moves.length, openSuggestions: openFb };
-  const total = feats.length + meetings.length + files.length + posts.length + moves.length;
-
-  const end = Date.now(), start = cut;
-  const range = fmtDay(start) + ' – ' + fmtDay(end);
-  const subject = total ? ('Beam hub — our week (' + fmtDay(end) + ')') : ('Beam hub — a quiet week (' + fmtDay(end) + ')');
-
-  const C = { ink: '#141B22', muted: '#5A6775', faint: '#98A4B0', line: '#DDE3E9', paper: '#F3F5F7', accent: '#1F5EFF', surface: '#FFFFFF' };
-  const sans = 'Jost, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
-
-  function section(title, inner) {
-    return '<tr><td style="padding:22px 28px 0"><p style="margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:' + C.faint + '">' + esc(title) + '</p>' + inner + '</td></tr>';
-  }
-  function row(main, sub) {
-    return '<div style="padding:11px 0;border-bottom:1px solid ' + C.line + '"><div style="font-size:15px;color:' + C.ink + ';font-weight:500">' + main + '</div>' + (sub ? '<div style="font-size:13px;color:' + C.muted + ';margin-top:3px">' + sub + '</div>' : '') + '</div>';
-  }
-
-  var body = '';
-
-  if (feats.length) {
-    body += section('What’s new', feats.map(function (e) { return row(esc(e.title || 'Update'), esc(e.what || '')); }).join(''));
-  }
-  if (meetings.length) {
-    body += section('Meetings logged', meetings.map(function (m) {
-      var d = fmtDay(ms(m.at) || ms(m.date));
-      var src = m.source === 'ai' ? ' · from AI notes' : '';
-      return row(esc(m.title || 'Meeting') + ' <span style="color:' + C.faint + ';font-weight:400;font-size:13px">' + esc(d) + esc(src) + '</span>', esc((m.disc || '').slice(0, 140)));
-    }).join(''));
-  }
-  if (files.length) {
-    body += section('New in the Library', files.map(function (f) {
-      var nm = String(f.pathname || '').split('/').pop().replace(/-[a-zA-Z0-9]{10,}(\.[^.]+)?$/, '$1');
-      return row(esc(nm || f.pathname), fmtDay(ms(f.uploadedAt)));
-    }).join(''));
-  }
-  if (posts.length || moves.length) {
-    var rm = '';
-    if (posts.length) rm += posts.slice(0, 6).map(function (p) { return row('<span style="color:' + C.muted + ';font-weight:400;font-size:14px"><b style="color:' + C.ink + ';font-weight:500">' + esc(p.by || 'someone') + '</b> — ' + esc(String(p.text || '').slice(0, 160)) + '</span>', ''); }).join('');
-    if (moves.length) rm += row(moves.length + ' roadmap status update' + (moves.length === 1 ? '' : 's'), '');
-    body += section('On the RoadMap', rm);
-  }
-
-  if (!total) {
-    body += '<tr><td style="padding:22px 28px 0"><div style="padding:16px 18px;background:' + C.paper + ';border-radius:8px;font-size:14px;color:' + C.muted + '">Quiet week in the hub — nothing new logged. Jump in when you get a chance: log a meeting, post where we’re at, or drop a file in the Library.</div></td></tr>';
-  }
-
-  var openLine = openFb ? ('<p style="margin:16px 0 0;font-size:13px;color:' + C.muted + '">' + openFb + ' suggestion' + (openFb === 1 ? '' : 's') + ' waiting in the queue on Our RoadMap.</p>') : '';
-
-  const html = '<!doctype html><html><body style="margin:0;background:' + C.paper + ';font-family:' + sans + ';-webkit-font-smoothing:antialiased">' +
-    '<div style="display:none;max-height:0;overflow:hidden;opacity:0">Your week in the Beam hub — ' + esc(range) + '.</div>' +
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:' + C.paper + ';padding:28px 14px"><tr><td align="center">' +
-    '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:' + C.surface + ';border:1px solid ' + C.line + ';border-radius:14px;overflow:hidden">' +
-    '<tr><td style="background:' + C.ink + ';padding:22px 28px"><span style="color:#fff;font-size:15px;font-weight:500;letter-spacing:.24em;text-transform:uppercase">BEAM</span><span style="color:rgba(255,255,255,.55);font-size:11px;letter-spacing:.16em;text-transform:uppercase;float:right;padding-top:4px">The hub &middot; weekly</span></td></tr>' +
-    '<tr><td style="padding:26px 28px 2px"><h1 style="margin:0;font-size:24px;font-weight:300;color:' + C.ink + '">Our week in the hub</h1><p style="margin:8px 0 0;font-size:13px;color:' + C.faint + '">' + esc(range) + '</p></td></tr>' +
-    '<tr><td style="padding:16px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ' + C.line + ';border-radius:10px"><tr>' +
-    statCell(feats.length, 'new', C) + statCell(meetings.length, meetings.length === 1 ? 'meeting' : 'meetings', C) + statCell(files.length, files.length === 1 ? 'file' : 'files', C) + statCell(posts.length, posts.length === 1 ? 'post' : 'posts', C) +
-    '</tr></table></td></tr>' +
-    body +
-    '<tr><td style="padding:24px 28px 6px">' + openLine + '<a href="' + SITE + '/guide.html" style="display:inline-block;margin-top:16px;background:' + C.ink + ';color:#fff;text-decoration:none;font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;padding:12px 24px;border-radius:999px">Open the hub</a></td></tr>' +
-    '<tr><td style="padding:22px 28px 26px"><p style="margin:0;font-size:11px;color:' + C.faint + ';line-height:1.6">You’re getting this because you’re one of the three of us. It goes out every Sunday evening. Want something changed? Use the <b style="color:' + C.muted + ';font-weight:500">Suggest a change</b> box on any page.</p></td></tr>' +
-    '</table></td></tr></table></body></html>';
-
-  return { subject: subject, html: html, counts: counts };
+// Everything the email is built from. Cleans the suggestions queue first, so the counts are true.
+async function gather() {
+  const rec = await reconcileSuggestions();
+  if (!rec.changelog) throw new Error('could not read whatsnew.json');
+  const got = await Promise.all([kvGet('beam-progress'), kvGet('beam-meetings'), kvGet('beam-feedback-closed'), loadSiteJson('roadmap.json'), libraryFiles()]);
+  if (!got[3].data) throw new Error('could not read roadmap.json');
+  return { whatsnew: rec.changelog, open: rec.open, progress: got[0].value, meetings: got[1].value, closed: got[2].value, roadmap: got[3].data, files: got[4] };
 }
 
-function statCell(n, label, C) {
-  return '<td align="center" style="padding:14px 6px;border-right:1px solid ' + C.line + '"><div style="font-size:26px;font-weight:300;color:' + (n ? C.accent : C.faint) + '">' + n + '</div><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:' + C.faint + ';margin-top:2px">' + esc(label) + '</div></td>';
-}
-
-async function sendEmail(opts) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key) return { sent: false, reason: 'RESEND_API_KEY not set' };
-  try {
+async function sendOnce(to, subject, html, text) {
+  const which = provider();
+  if (which === 'resend') {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: { authorization: 'Bearer ' + key, 'content-type': 'application/json' },
-      body: JSON.stringify({ from: opts.from, to: opts.to, subject: opts.subject, html: opts.html }),
+      headers: { authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'content-type': 'application/json' },
+      body: JSON.stringify({ from: process.env.DIGEST_FROM, to: to, subject: subject, html: html, text: text }),
     });
-    const text = await r.text();
-    return { sent: r.ok, status: r.status, body: text.slice(0, 500) };
-  } catch (e) { return { sent: false, reason: String((e && e.message) || e) }; }
+    const body = await r.text();
+    return r.ok ? { ok: true } : { ok: false, error: 'Resend said HTTP ' + r.status + ': ' + short(body) };
+  }
+  if (which === 'gmail') {
+    // Loaded here, not at the top: a mail library must never be able to stop this file loading.
+    const mod = await import('nodemailer');
+    const nodemailer = mod.default || mod;
+    const user = String(process.env.GMAIL_USER).trim();
+    const transport = nodemailer.createTransport({
+      host: 'smtp.gmail.com', port: 465, secure: true,
+      auth: { user: user, pass: String(process.env.GMAIL_APP_PASSWORD).replace(/\s+/g, '') },
+    });
+    const info = await transport.sendMail({ from: { name: 'Beam Hub', address: user }, to: to, subject: subject, html: html, text: text });
+    const rejected = (info && info.rejected) || [];
+    return rejected.length ? { ok: false, error: 'Gmail rejected ' + rejected.length + ' of ' + to.length + ' recipients' } : { ok: true };
+  }
+  return { ok: false, error: 'no way to send is set up' };
+}
+
+async function send(to, subject, html, text) {
+  let last = { ok: false, error: 'not attempted' };
+  for (let i = 0; i < 2; i++) {
+    try { last = await sendOnce(to, subject, html, text); }
+    catch (e) { last = { ok: false, error: short((e && e.message) || e) }; }
+    if (last.ok) return last;
+    if (i === 0) await sleep(2500);
+  }
+  return last;
+}
+
+async function status(req, res, now) {
+  const to = parseRecipients(process.env.DIGEST_TO);
+  const which = provider();
+  const missing = [];
+  if (!process.env.CRON_SECRET) missing.push('CRON_SECRET');
+  if (!to.length) missing.push('DIGEST_TO');
+  if (!which) missing.push('GMAIL_USER and GMAIL_APP_PASSWORD (or RESEND_API_KEY and DIGEST_FROM)');
+  let state = {}, storeOk = storeReady();
+  if (storeOk) { try { state = (await kvGet(STATE)).value || {}; } catch (e) { storeOk = false; } }
+  const local = localParts(now, TZ);
+  const full = authorized(req);   // error text can name an address, so it is only shown with the secret
+  res.status(200).json({
+    ready: missing.length === 0 && storeOk,
+    schedule: SCHEDULE_TEXT,
+    mountainTimeNow: local.weekday + ' ' + local.date + ' ' + pad(local.hour) + ':' + pad(local.minute),
+    configured: { cronSecret: !!process.env.CRON_SECRET, sendsWith: which, recipients: to.length, store: storeOk, library: !!process.env.BLOB_READ_WRITE_TOKEN },
+    missing: missing,
+    lastSent: state.lastSent || null,
+    lastSentAt: state.lastSentAt || null,
+    lastRecipients: state.lastRecipients || null,
+    lastError: state.lastError ? (full ? state.lastError : { at: state.lastError.at }) : null,
+    lastTest: state.lastTest ? (full ? state.lastTest : { at: state.lastTest.at, ok: state.lastTest.ok }) : null,
+  });
 }
 
 export default async function handler(req, res) {
-  const secret = process.env.CRON_SECRET || '';
+  res.setHeader('Cache-Control', 'no-store');
   const q = req.query || {};
-  const provided = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '') || String(q.secret || '');
-  if (!secret || provided !== secret) { res.status(401).json({ error: 'unauthorized' }); return; }
+  const now = new Date();
+  try {
+    if (q.status === '1') { await status(req, res, now); return; }
 
-  const preview = String(q.preview || '') === '1';
-  const days = Math.max(1, Math.min(60, parseInt(q.days, 10) || 7));
+    // Read-only views. They never send anything.
+    if (q.preview === '1' || q.dry === '1') {
+      if (String(q.pw || '').toLowerCase() !== HUB_PW) { res.status(401).json({ error: 'unauthorized' }); return; }
+      if (!storeReady()) { res.status(503).json({ error: 'the shared store is not set up' }); return; }
+      if (q.dry === '1') {
+        const at = q.now ? new Date(String(q.now)) : now;
+        if (isNaN(at.getTime())) { res.status(400).json({ error: 'now must be a date like 2026-11-30T01:05:00Z' }); return; }
+        const d = decide(at, (await kvGet(STATE)).value || {});
+        res.status(200).json({ wouldSend: d.send, reason: d.reason, mountain: d.local, schedule: SCHEDULE_TEXT });
+        return;
+      }
+      const c = compose(await gather(), now.getTime());
+      if (q.format === 'json') { res.status(200).json({ subject: c.subject, counts: c.counts }); return; }
+      if (q.format === 'text') { res.setHeader('content-type', 'text/plain; charset=utf-8'); res.status(200).send(c.subject + '\n\n' + c.text); return; }
+      res.setHeader('content-type', 'text/html; charset=utf-8');
+      res.status(200).send(c.html);
+      return;
+    }
 
-  const results = await Promise.all([kv('beam-whatsnew'), kv('beam-progress'), kv('beam-meetings'), kv('beam-feedback')]);
-  let files = [];
-  try { if (process.env.BLOB_READ_WRITE_TOKEN) { const out = await list(); files = (out && out.blobs) || []; } } catch (e) {}
+    // Everything below can send email, so it needs the secret.
+    if (!authorized(req)) { res.status(401).json({ error: 'unauthorized' }); return; }
+    if (!storeReady()) { res.status(503).json({ error: 'the shared store is not set up' }); return; }
+    const to = parseRecipients(process.env.DIGEST_TO);
+    const which = provider();
+    if (!to.length || !which) { res.status(503).json({ error: 'email is not set up yet; see /api/digest?status=1 for what is missing' }); return; }
 
-  const composed = compose({ whatsnew: results[0], progress: results[1], meetings: results[2], feedback: results[3], files: files }, days);
+    if (q.test === '1') {
+      const c = compose(await gather(), now.getTime());
+      const sent = await send([to[0]], '[Test] ' + c.subject, c.html, c.text);
+      await kvUpdate(STATE, function (s) { return Object.assign({}, s || {}, { lastTest: { at: now.toISOString(), ok: sent.ok, error: sent.ok ? null : short(sent.error) } }); });
+      res.status(sent.ok ? 200 : 502).json({ ok: sent.ok, test: true, sentTo: 1, sendsWith: which, counts: c.counts, error: sent.ok ? undefined : sent.error });
+      return;
+    }
 
-  if (preview) { res.setHeader('content-type', 'text/html; charset=utf-8'); res.status(200).send(composed.html); return; }
+    const force = q.force === '1';
+    const local = localParts(now, TZ);
 
-  const from = process.env.DIGEST_FROM || 'Beam hub <onboarding@resend.dev>';
-  const to = String(process.env.DIGEST_TO || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-  if (!to.length) { res.status(200).json({ ok: false, reason: 'DIGEST_TO not set', counts: composed.counts }); return; }
+    // Claim today before doing anything slow. Of two runs at the same moment, exactly one wins.
+    let won = false, why = '';
+    await kvUpdate(STATE, function (s) {
+      const cur = s || {};
+      const d = decide(now, cur);
+      won = force || d.send;
+      why = d.reason;
+      if (!won) return undefined;
+      return Object.assign({}, cur, { claim: { date: local.date, at: now.toISOString() } });
+    });
+    if (!won) { res.status(200).json({ ok: true, skipped: true, reason: why }); return; }
 
-  const sent = await sendEmail({ from: from, to: to, subject: composed.subject, html: composed.html });
-  res.status(sent.sent ? 200 : 502).json({ ok: sent.sent, to: to.length, counts: composed.counts, detail: sent });
+    let c = null, sent;
+    try {
+      c = compose(await gather(), now.getTime());
+      sent = await send(to, c.subject, c.html, c.text);
+    } catch (e) {
+      sent = { ok: false, error: short((e && e.message) || e) };
+    }
+
+    // Record the result and release the claim. On failure lastSent stays unset, so the next slot retries.
+    await kvUpdate(STATE, function (s) {
+      const next = Object.assign({}, s || {});
+      delete next.claim;
+      if (sent.ok) {
+        next.lastSent = local.date; next.lastSentAt = new Date().toISOString();
+        next.lastRecipients = to.length; next.lastCounts = c.counts; next.lastError = null;
+      } else {
+        next.lastError = { at: new Date().toISOString(), message: short(sent.error) };
+      }
+      return next;
+    });
+    res.status(sent.ok ? 200 : 502).json({ ok: sent.ok, sentTo: sent.ok ? to.length : 0, sendsWith: which, counts: c ? c.counts : null, error: sent.ok ? undefined : sent.error });
+  } catch (e) {
+    res.status(500).json({ error: short((e && e.message) || e) });
+  }
 }
