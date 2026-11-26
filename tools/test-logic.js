@@ -244,6 +244,32 @@ group('The email: edge cases');
   ok(c.html.length < 100000, 'even a huge week stays under Gmail\'s clipping size (' + c.html.length + ' bytes)');
 }
 
+group('The email: wording');
+{
+  const c = L.compose(Object.assign({}, busy, { progress: { items: { outline: { status: 'done', by: 'someone', at: ago(2) }, process: { status: 'progress', at: ago(1) } }, messages: [] } }), NOW);
+  ok(c.html.indexOf('Pat · updated Nov 27') > 0 && c.html.indexOf('updated Nov 28') > 0, 'a status changed by someone who gave no name reads "updated Nov 27"');
+  ok(!/by someone/i.test(c.html + c.text), 'and never "updated by someone"');
+}
+
+group('Test data stays out of the email');
+{
+  ok(L.isTestEntry({ by: 'Claude (testing)' }) && L.isTestEntry({ by: '<b>Claude</b> (Testing) ' }), 'a name ending in "(testing)" marks test data');
+  ok(!L.isTestEntry({ by: 'Nate' }) && !L.isTestEntry({ by: 'testing Nate' }) && !L.isTestEntry({ by: '(testing) Nate' }) && !L.isTestEntry({}) && !L.isTestEntry(null), 'ordinary names are never mistaken for test data');
+  const rec = L.closedRecords([{ id: 'ftest00001', by: 'Claude (testing)', text: 'x' }, { id: 'freal00001', by: 'Nate', text: 'y' }], { ftest00001: 'declined', freal00001: 'built' }, 'T');
+  eq(rec, [{ id: 'ftest00001', by: 'Claude (testing)', outcome: 'declined', closedAt: 'T', test: true }, { id: 'freal00001', by: 'Nate', outcome: 'built', closedAt: 'T' }], 'a cleared test suggestion is tallied like any other, flagged as a test');
+  const d = Object.assign({}, busy, {
+    open: [{ id: 'fopen00001', by: 'Pat' }, { id: 'ftest00002', by: 'Claude (testing)' }, { id: 'ftest00003', by: 'Claude (testing)' }],
+    closed: { closed: [{ id: 'fbuilt0001', by: 'Nate', outcome: 'built', closedAt: ago(1) }, { id: 'ftest00001', by: 'Claude (testing)', outcome: 'declined', closedAt: ago(1), test: true }] },
+  });
+  let c = L.compose(d, NOW);
+  eq([c.counts.openSuggestions, c.counts.built, c.counts.declined], [1, 1, 0], 'the email counts only real suggestions');
+  ok(c.html.indexOf('1 suggestion open in the queue on Our RoadMap and 1 built this week.') > 0 && c.html.indexOf('passed on') < 0, 'and its wording reflects only the real ones');
+  c = L.compose(d, NOW, { includeTests: true });
+  eq([c.counts.openSuggestions, c.counts.built, c.counts.declined], [3, 1, 1], 'the preview can count test data on request, to check the pipeline end to end');
+  c = L.compose(Object.assign({}, d, { open: [{ id: 'ftest00002', by: 'Claude (testing)' }], closed: { closed: [{ id: 'ftest00001', by: 'x', outcome: 'declined', closedAt: ago(1), test: true }] }, whatsnew: { entries: [] }, meetings: null, files: [], progress: null }), NOW);
+  ok(c.counts.quiet && c.html.indexOf('>Suggestions<') < 0, 'a week with nothing but test activity is still a quiet week');
+}
+
 group('Small helpers');
 {
   eq(L.clip('short', 10), 'short', 'clip leaves short text alone');

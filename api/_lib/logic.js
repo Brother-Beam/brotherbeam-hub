@@ -96,9 +96,19 @@ export function splitClosed(list, closed) {
   return { keep: keep, removed: removed };
 }
 
+// Test data. A suggestion sent under a name ending in "(testing)" is how the queue gets
+// checked on the live site. It goes through everything a real one does (stored, shown in
+// the queue, cleared by auto-clean, tallied) but is left out of the weekly email, so a
+// test never shows up in the founders' inboxes.
+export function isTestEntry(x) { return /\(testing\)\s*$/i.test(String((x && x.by) || '')); }
+
 // What we remember about a cleared suggestion: that it happened, never what it said.
 export function closedRecords(removed, closed, nowIso) {
-  return removed.map(function (f) { return { id: f.id, by: f.by || 'someone', outcome: closed[f.id], closedAt: nowIso }; });
+  return removed.map(function (f) {
+    const rec = { id: f.id, by: f.by || 'someone', outcome: closed[f.id], closedAt: nowIso };
+    if (isTestEntry(f)) rec.test = true;
+    return rec;
+  });
 }
 
 // ---------- schedule: Sunday 6 PM Mountain, once ----------
@@ -165,9 +175,11 @@ export function baseName(pathname) {
   return String(pathname || '').split('/').pop().replace(/-[a-zA-Z0-9]{20,}(?=\.[^.]+$)/, '');
 }
 
-// Reads a week of activity out of everything the hub holds.
-export function summarize(data, nowMs) {
+// Reads a week of activity out of everything the hub holds. opts.includeTests counts test
+// suggestions too (only the preview uses that, to check the pipeline end to end).
+export function summarize(data, nowMs, opts) {
   const d = data || {};
+  const real = (opts && opts.includeTests) ? function () { return true; } : function (x) { return !(x && x.test) && !isTestEntry(x); };
   const from = nowMs - WINDOW_DAYS * DAY_MS;
   const inWeek = function (t) { return t > from && t <= nowMs; };
 
@@ -203,9 +215,9 @@ export function summarize(data, nowMs) {
     .sort(function (a, b) { return b.t - a.t; });
 
   const features = entriesOf(d.whatsnew).filter(function (e) { return inWeek(e.t); });
-  const open = Array.isArray(d.open) ? d.open : [];
+  const open = (Array.isArray(d.open) ? d.open : []).filter(real);
   const closedLog = (d.closed && Array.isArray(d.closed.closed)) ? d.closed.closed : [];
-  const closedWeek = closedLog.filter(function (c) { return inWeek(ms(c.closedAt)); });
+  const closedWeek = closedLog.filter(function (c) { return inWeek(ms(c.closedAt)) && real(c); });
   const built = closedWeek.filter(function (c) { return c.outcome === 'built'; }).length;
   const declined = closedWeek.filter(function (c) { return c.outcome === 'declined'; }).length;
   const moves = steps.filter(function (s) { return s.moved; }).length;
@@ -222,8 +234,14 @@ function joinAnd(parts) {
   return parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
 }
 
-export function compose(data, nowMs) {
-  const s = summarize(data, nowMs);
+// "updated by Pat on Nov 27", or just "updated Nov 27" when whoever did it had not put a name in.
+function movedBy(x) {
+  const named = x.by && String(x.by).toLowerCase() !== 'someone';
+  return (named ? 'updated by ' + x.by + ' on ' : 'updated ') + dayShort(x.at);
+}
+
+export function compose(data, nowMs, opts) {
+  const s = summarize(data, nowMs, opts);
   const range = dayShort(s.from + DAY_MS) + ' – ' + dayShort(s.to);
   const subject = s.quiet ? 'Beam · a quiet week in the hub (' + range + ')' : 'Beam · our week in the hub (' + range + ')';
 
@@ -267,7 +285,7 @@ export function compose(data, nowMs) {
   if (s.steps.length) {
     body += section('Where we stand', s.steps.map(function (x) {
       const st = STATUS[x.status];
-      const who = [x.owner, x.moved ? 'updated by ' + (x.by || 'someone') + ' on ' + dayShort(x.at) : ''].filter(Boolean).join(' · ');
+      const who = [x.owner, x.moved ? movedBy(x) : ''].filter(Boolean).join(' · ');
       return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid ' + C.hair + ';"><tr>'
         + '<td style="padding:13px 10px 13px 0;">'
         + '<div style="' + P + 'font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:' + C.faint + ';">' + esc(x.stage) + '</div>'
@@ -350,7 +368,7 @@ export function compose(data, nowMs) {
   T.push('BEAM · OUR WEEK IN THE HUB', range, '', intro);
   if (s.steps.length) {
     T.push('', 'WHERE WE STAND');
-    s.steps.forEach(function (x) { T.push('- [' + x.stage + '] ' + x.title + (x.owner ? ' (' + x.owner + ')' : '') + ': ' + STATUS[x.status][0] + (x.moved ? ', updated by ' + (x.by || 'someone') + ' on ' + dayShort(x.at) : '')); });
+    s.steps.forEach(function (x) { T.push('- [' + x.stage + '] ' + x.title + (x.owner ? ' (' + x.owner + ')' : '') + ': ' + STATUS[x.status][0] + (x.moved ? ', ' + movedBy(x) : '')); });
   }
   if (s.meetings.length) {
     T.push('', 'MEETINGS LOGGED');

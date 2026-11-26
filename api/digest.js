@@ -158,7 +158,8 @@ export default async function handler(req, res) {
         res.status(200).json({ wouldSend: d.send, reason: d.reason, mountain: d.local, schedule: SCHEDULE_TEXT });
         return;
       }
-      const c = compose(await gather(), now.getTime());
+      // &tests=1 also counts suggestions sent under a "(testing)" name, which real emails never do.
+      const c = compose(await gather(), now.getTime(), { includeTests: q.tests === '1' });
       if (q.format === 'json') { res.status(200).json({ subject: c.subject, counts: c.counts }); return; }
       if (q.format === 'text') { res.setHeader('content-type', 'text/plain; charset=utf-8'); res.status(200).send(c.subject + '\n\n' + c.text); return; }
       res.setHeader('content-type', 'text/html; charset=utf-8');

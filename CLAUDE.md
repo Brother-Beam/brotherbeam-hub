@@ -92,6 +92,10 @@ $JSC -m tools/test-store.js     # read-change-write under load, and auto-clean a
 
 Each prints `ALL n CHECKS PASSED` or names what failed. `tools/` is excluded from the deployed site by `.vercelignore`. If you change a rule in `logic.js`, change or add the test that pins it.
 
+### Testing the queue on the live site
+
+To check the queue for real, send suggestions under a name ending in **`(testing)`** (for example `Claude (testing)`), with text starting `TEST`. They are stored, shown in the queue and cleared by auto-clean exactly like real ones, but `isTestEntry()` keeps them out of the weekly email's counts, so a test can never reach the founders' inboxes. Clear them the real way: put their ids under `declined` in `whatsnew.json` and deploy; once `/api/feedback` shows them gone, take the ids back out of `declined` in the next commit so the file stays tidy. `/api/digest?preview=1&pw=scooter&format=json&tests=1` counts test data too, which is how to confirm the tally was written. Never mark a suggestion `declined` unless it is test data or Mike said to pass on it.
+
 ## Blob gotchas (hard-won — do not regress)
 
 - The store is **private**. Upload with `access: 'private'`; files are NOT reachable by their raw URL. `blob-get.js` streams a file to the browser server-side via `get(path, { access: 'private' })` — that is why the Library links downloads through `/api/blob-get`, never the blob URL.
