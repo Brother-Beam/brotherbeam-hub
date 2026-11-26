@@ -124,13 +124,16 @@ async function status(req, res, now) {
   if (!which) missing.push('GMAIL_USER and GMAIL_APP_PASSWORD (or RESEND_API_KEY and DIGEST_FROM)');
   let state = {}, storeOk = storeReady();
   if (storeOk) { try { state = (await kvGet(STATE)).value || {}; } catch (e) { storeOk = false; } }
+  // Can the Gmail route's mail library be loaded here? Loads it, connects to nothing.
+  let mailLibrary = false;
+  try { const mod = await import('nodemailer'); mailLibrary = typeof (mod.default || mod).createTransport === 'function'; } catch (e) { mailLibrary = false; }
   const local = localParts(now, TZ);
   const full = authorized(req);   // error text can name an address, so it is only shown with the secret
   res.status(200).json({
     ready: missing.length === 0 && storeOk,
     schedule: SCHEDULE_TEXT,
     mountainTimeNow: local.weekday + ' ' + local.date + ' ' + pad(local.hour) + ':' + pad(local.minute),
-    configured: { cronSecret: !!process.env.CRON_SECRET, sendsWith: which, recipients: to.length, store: storeOk, library: !!process.env.BLOB_READ_WRITE_TOKEN },
+    configured: { cronSecret: !!process.env.CRON_SECRET, sendsWith: which, recipients: to.length, store: storeOk, library: !!process.env.BLOB_READ_WRITE_TOKEN, mailLibrary: mailLibrary },
     missing: missing,
     lastSent: state.lastSent || null,
     lastSentAt: state.lastSentAt || null,
