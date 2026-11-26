@@ -159,5 +159,57 @@
 
       <p class="foot">Beam &middot; shared across the three of us</p>
     </div>
-  </body>
+      <!-- Suggest a change: shared feedback box, on every page. Saves to beam-feedback via /api/tasks. -->
+    <style>
+      .fbk-wrap { max-width:760px; margin:0 auto; padding:0 max(18px,env(safe-area-inset-left,0px)) 56px; font-family:var(--font,sans-serif); }
+      .fbk { background:var(--surface,#fff); border:1px solid var(--line,#DDE3E9); border-top:3px solid var(--accent,#1F5EFF); border-radius:8px; box-shadow:var(--shadow,0 10px 30px -18px rgba(20,27,34,.3)); padding:18px 20px; }
+      .fbk-lab { font-size:10px; font-weight:500; letter-spacing:.2em; text-transform:uppercase; color:var(--faint,#98A4B0); margin:0 0 4px; }
+      .fbk-hint { font-size:12.5px; color:var(--muted,#5A6775); margin:0 0 13px; }
+      .fbk-row { display:flex; gap:10px; align-items:center; margin-bottom:11px; }
+      .fbk-name { font:inherit; font-size:13px; padding:8px 11px; border:1px solid var(--line,#DDE3E9); border-radius:6px; width:150px; background:var(--surface,#fff); color:var(--ink,#141B22); }
+      .fbk-as { font-size:12px; color:var(--faint,#98A4B0); }
+      .fbk-text { font:inherit; font-size:14px; padding:10px 12px; border:1px solid var(--line,#DDE3E9); border-radius:6px; min-height:70px; resize:vertical; width:100%; background:var(--surface,#fff); color:var(--ink,#141B22); }
+      .fbk-go { font:inherit; font-weight:500; letter-spacing:.12em; text-transform:uppercase; font-size:12px; background:var(--ink,#141B22); color:#fff; border:0; border-radius:999px; padding:11px 24px; cursor:pointer; margin-top:12px; }
+      .fbk-go[disabled] { opacity:.55; cursor:default; }
+      .fbk-stat { font-size:12.5px; color:var(--good,#0FA37F); margin-top:10px; min-height:17px; }
+      .fbk-stat.err { color:var(--warn,#B3382C); }
+    </style>
+    <section class="fbk-wrap" aria-label="Suggest a change">
+      <div class="fbk">
+        <p class="fbk-lab">Suggest a change</p>
+        <p class="fbk-hint">See something off, or want something added or changed? Drop it here. Mike reviews these and makes the change &mdash; you never have to touch anything technical.</p>
+        <div class="fbk-row"><input class="fbk-name" id="fbk-name" placeholder="your name" autocomplete="off" /><span class="fbk-as">posting as</span></div>
+        <textarea class="fbk-text" id="fbk-text" placeholder="e.g. On the Vision page, change the tagline to&hellip;"></textarea>
+        <button class="fbk-go" id="fbk-go" type="button">Send to Mike</button>
+        <p class="fbk-stat" id="fbk-stat"></p>
+      </div>
+    </section>
+    <script>
+      (function () {
+        var KEY = 'beam-feedback', NKEY = 'bb-progress-name';
+        var nameEl = document.getElementById('fbk-name'), textEl = document.getElementById('fbk-text'), btn = document.getElementById('fbk-go'), stat = document.getElementById('fbk-stat');
+        if (!btn) return;
+        try { nameEl.value = localStorage.getItem(NKEY) || ''; } catch (e) {}
+        nameEl.addEventListener('change', function () { try { localStorage.setItem(NKEY, nameEl.value.trim()); } catch (e) {} });
+        function pg() { var p = (location.pathname.split('/').pop() || 'index.html').replace(/\.html$/, ''); return p || 'index'; }
+        function send() {
+          var t = (textEl.value || '').trim(); if (!t) { textEl.focus(); return; }
+          var by = (nameEl.value || '').trim() || 'someone';
+          try { if (by !== 'someone') localStorage.setItem(NKEY, by); } catch (e) {}
+          btn.disabled = true; stat.className = 'fbk-stat'; stat.textContent = 'Sending\u2026';
+          var entry = { id: 'f' + Date.now(), by: by, at: new Date().toISOString(), text: t, page: pg() };
+          fetch('/api/tasks?key=' + KEY).then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (j) {
+              var list = (j && j.value && j.value.feedback) ? j.value.feedback : [];
+              list = list.concat([entry]).slice(-300);
+              return fetch('/api/tasks?key=' + KEY, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ value: { feedback: list } }) });
+            })
+            .then(function (r) { if (!r || !r.ok) throw new Error(r ? 'HTTP ' + r.status : 'no response'); return r.json(); })
+            .then(function () { btn.disabled = false; textEl.value = ''; stat.className = 'fbk-stat'; stat.textContent = 'Sent \u2014 Mike will see this. Thanks!'; })
+            .catch(function (e) { btn.disabled = false; stat.className = 'fbk-stat err'; stat.textContent = 'Could not send (' + e.message + '). Try again.'; });
+        }
+        btn.addEventListener('click', send);
+      })();
+    </script>
+</body>
 </html>

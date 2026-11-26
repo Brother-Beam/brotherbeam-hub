@@ -12,9 +12,11 @@ The three founders **use** this hub like a shared drive and a meeting log. They 
 
 Each page is one self-contained file: inline `<style>` with the brand tokens, the shared nav bar, then the content. The six live pages, grouped as they appear in the nav:
 
-- `guide.html` — **Guide** (how to use the hub) · `index.html` — **Our Vision** (the company)
-- `progress.html` — **Our RoadMap** (roadmap + message board) · `documents.html` — **Our Library** (private file store) · `meetings.html` — **Meeting Minutes** (AI-notes parser)
+- `guide.html` — **Guide** (how to use the hub; shows the **What's new** changelog from `beam-whatsnew`) · `index.html` — **Our Vision** (the company)
+- `progress.html` — **Our RoadMap** (roadmap + message board + the **Suggestions** queue from `beam-feedback`, each with a remove button) · `documents.html` — **Our Library** (private file store) · `meetings.html` — **Meeting Minutes** (AI-notes parser)
 - `build.html` — **How I built this** (plain-language explainer for the founders)
+
+Every page carries a shared **Suggest a change** feedback box before `</body>` (self-contained style+markup+script, saves to `beam-feedback`), added by `scratchpad/inject_feedback.py` (idempotent — skips a page that already has `fbk-wrap`). The founders only *use* these; the loop is: they drop a suggestion → it appears in the RoadMap queue → Mike builds it and adds a line to `beam-whatsnew` → he removes the suggestion → it shows under What's new and in the Sunday email.
 
 Nav is three color-coded groups separated by `.divi` dividers, with neon hover/active glow (cyan `#2DE2E6`, hot pink `#FF2E88`, purple `#B14EFF`). It is duplicated in each page's markup + `<style>`; change all six together (see `scratchpad` scripts or edit in place).
 
@@ -22,9 +24,10 @@ Brand: font **Jost**. Tokens per page — paper `#F3F5F7`, ink `#141B22`, muted 
 
 ## Backend (Vercel serverless functions in `api/`)
 
-- `tasks.js` — proxies shared state to the Railway kv store, adding `HUB_API_TOKEN` server side. Keys: `beam-progress`, `beam-meetings`. Env: `HUB_API_BASE`, `HUB_API_TOKEN`.
+- `tasks.js` — proxies shared state to the Railway kv store, adding `HUB_API_TOKEN` server side. Generic: any key matching `/^[a-z0-9-]{1,64}$/`. Keys in use: `beam-progress`, `beam-meetings`, `beam-feedback` (the Suggest-a-change queue, `{feedback:[{id,by,at,text,page}]}`), `beam-whatsnew` (the curated "What's new" changelog, `{entries:[{id,at,title,what}]}`). Env: `HUB_API_BASE`, `HUB_API_TOKEN`.
 - `parse-notes.js` — sends pasted meeting notes to the Anthropic API and returns `{title, discussed, decisions[], actionItems[{item,owner}]}`. Env: `ANTHROPIC_API_KEY`. Model `claude-opus-5-5`.
 - `blob-upload.js` / `blob-list.js` / `blob-delete.js` / `blob-get.js` — the Library's file store on **Vercel Blob**. Env: `BLOB_READ_WRITE_TOKEN`.
+- `digest.js` — the weekly email digest. Reads the stores + Blob, composes a "our week in the hub" summary (features shipped, meetings, new files, roadmap activity), and sends it via **Resend**. Run by a Vercel Cron (`vercel.json`, `0 1 * * 1` = ~Sun evening Denver, UTC Mon 01:00). Fail-closed: requires `CRON_SECRET`. Env: `CRON_SECRET`, `RESEND_API_KEY`, `DIGEST_FROM` (verified sender), `DIGEST_TO` (comma-separated recipients — **kept out of this public repo on purpose; set in Vercel**). By hand: `/api/digest?secret=…&preview=1` renders it without sending; drop `preview` to send; `&days=N` widens the window. `compose()` is exported and pure for testing.
 
 ### Blob gotchas (hard-won — do not regress)
 

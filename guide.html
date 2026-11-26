@@ -64,6 +64,21 @@
       .note .d code { background:var(--hair); padding:1px 7px; border-radius:5px; font-size:12.5px; }
       .note .d a { color:var(--accent); text-decoration:none; }
 
+      .wn { margin-top:30px; background:var(--surface); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); overflow:hidden; }
+      .wn-top { display:flex; align-items:center; gap:10px; padding:15px 18px 13px; border-bottom:1px solid var(--hair); }
+      .wn-top .lab { font-size:11px; font-weight:500; letter-spacing:.2em; text-transform:uppercase; color:var(--faint); margin:0; }
+      .wn-badge { font-size:10px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:#fff; background:var(--accent); border-radius:999px; padding:3px 9px; }
+      .wn-sync { margin-left:auto; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); }
+      .wn-list { padding:2px 18px 8px; }
+      .wn-item { padding:14px 0; border-bottom:1px solid var(--hair); }
+      .wn-item:last-child { border-bottom:0; }
+      .wn-h { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+      .wn-t { font-size:15px; font-weight:500; color:var(--ink); }
+      .wn-dot { font-size:9px; color:var(--accent); vertical-align:middle; }
+      .wn-when { font-size:11px; color:var(--faint); letter-spacing:.04em; margin-left:auto; white-space:nowrap; }
+      .wn-d { font-size:13.5px; color:var(--muted); margin-top:5px; }
+      .wn-empty { color:var(--faint); font-size:13px; padding:16px 0; }
+
       .foot { margin-top:48px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); }
     </style>
   </head>
@@ -93,7 +108,41 @@
     <div class="wrap">
       <p class="kick">Start here</p>
       <h1>How to use the hub</h1>
-      <p class="sub">This is the shared workspace for the three of us. One link, four pages: the vision, our files, where we are, and a log of every meeting. Here is what each one is for and how to use it. Nothing to install, nothing to sign in to.</p>
+      <p class="sub">This is the shared workspace for the three of us. One link, a handful of pages: the vision, our files, where we are, and a log of every meeting. Here is what each one is for and how to use it. Nothing to install, nothing to sign in to.</p>
+
+      <div class="wn" id="wn">
+        <div class="wn-top">
+          <p class="lab">What&rsquo;s new</p>
+          <span class="wn-badge" id="wn-badge" style="display:none"></span>
+          <span class="wn-sync" id="wn-sync">loading&hellip;</span>
+        </div>
+        <div class="wn-list" id="wn-list"><div class="wn-empty">Loading&hellip;</div></div>
+      </div>
+      <script>
+        (function () {
+          var SEEN = 'bb-whatsnew-seen';
+          var listEl = document.getElementById('wn-list'), syncEl = document.getElementById('wn-sync'), badgeEl = document.getElementById('wn-badge');
+          var lastSeen = 0; try { lastSeen = +localStorage.getItem(SEEN) || 0; } catch (e) {}
+          function esc(x){ return String(x==null?'':x).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
+          function ms(x){ var n=Date.parse(x); return isNaN(n)?0:n; }
+          function ago(t){ if(!t)return''; var s=Math.max(1,(Date.now()-t)/1000); if(s<60)return'just now'; var m=s/60; if(m<60)return Math.floor(m)+'m ago'; var h=m/60; if(h<24)return Math.floor(h)+'h ago'; var d=h/24; if(d<7)return Math.floor(d)+'d ago'; try{return new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'});}catch(e){return'';} }
+          fetch('/api/tasks?key=beam-whatsnew').then(function(r){return r.ok?r.json():null;}).then(function(j){
+            var entries = (j && j.value && j.value.entries) ? j.value.entries.slice() : [];
+            entries.sort(function(a,b){ return ms(b.at)-ms(a.at); });
+            syncEl.textContent = 'updates';
+            if(!entries.length){ listEl.innerHTML='<div class="wn-empty">No new features yet. When something new lands in the hub, it shows up here with what it does.</div>'; return; }
+            var newest = ms(entries[0].at), newCount = 0;
+            var html = entries.slice(0,12).map(function(e){
+              var t = ms(e.at), isNew = (lastSeen>0 && t>lastSeen);
+              if (isNew) newCount++;
+              return '<div class="wn-item"><div class="wn-h"><span class="wn-t">'+(isNew?'<span class="wn-dot">●</span> ':'')+esc(e.title||'Update')+'</span><span class="wn-when">'+ago(t)+'</span></div>'+(e.what?'<div class="wn-d">'+esc(e.what)+'</div>':'')+'</div>';
+            }).join('');
+            listEl.innerHTML = html;
+            if (newCount>0 && lastSeen>0){ badgeEl.style.display=''; badgeEl.textContent = newCount+' new'; }
+            try { localStorage.setItem(SEEN, String(newest)); } catch(e) {}
+          }).catch(function(){ listEl.innerHTML='<div class="wn-empty">Couldn’t load updates right now.</div>'; syncEl.textContent='offline'; });
+        })();
+      </script>
 
       <div class="sec">
         <div class="sec-h"><p class="label">The four pages</p><span class="line"></span></div>
@@ -135,11 +184,65 @@
           <div class="note"><div class="t">Open by the link</div><div class="d">There is no password. Anyone with the link can open the hub, so keep the link among the three of us.</div></div>
           <div class="note"><div class="t">Put your name in once</div><div class="d">The Progress board and Meetings remember your name on your own device, so your posts and entries are signed as you.</div></div>
           <div class="note"><div class="t">Everything is shared and live</div><div class="d">Files, statuses, posts, and meetings are the same for all three of us and save as you go. Open a page again to pull the latest.</div></div>
-          <div class="note"><div class="t">Who runs it</div><div class="d">Mike builds and maintains the hub, so none of us has to. If a page is wrong or you want something added, just tell him &mdash; you never have to touch anything technical.</div></div>
+          <div class="note"><div class="t">The Library has a password</div><div class="d">Our files sit behind one shared password so they stay private. The three of us use the same one &mdash; ask Mike if you don&rsquo;t have it yet.</div></div>
+          <div class="note"><div class="t">Suggest a change on any page</div><div class="d">Every page has a <b>Suggest a change</b> box at the bottom. See something off or want something added? Drop it there and Mike makes the change &mdash; you never have to touch anything technical. New things show up under <b>What&rsquo;s new</b> at the top of this page, and in a weekly Sunday email.</div></div>
+          <div class="note"><div class="t">Who runs it</div><div class="d">Mike builds and maintains the hub, so none of us has to. If a page is wrong or you want something added, use the <b>Suggest a change</b> box or just tell him directly.</div></div>
         </div>
       </div>
 
       <p class="foot">Beam &middot; shared across the three of us</p>
     </div>
-  </body>
+      <!-- Suggest a change: shared feedback box, on every page. Saves to beam-feedback via /api/tasks. -->
+    <style>
+      .fbk-wrap { max-width:760px; margin:0 auto; padding:0 max(18px,env(safe-area-inset-left,0px)) 56px; font-family:var(--font,sans-serif); }
+      .fbk { background:var(--surface,#fff); border:1px solid var(--line,#DDE3E9); border-top:3px solid var(--accent,#1F5EFF); border-radius:8px; box-shadow:var(--shadow,0 10px 30px -18px rgba(20,27,34,.3)); padding:18px 20px; }
+      .fbk-lab { font-size:10px; font-weight:500; letter-spacing:.2em; text-transform:uppercase; color:var(--faint,#98A4B0); margin:0 0 4px; }
+      .fbk-hint { font-size:12.5px; color:var(--muted,#5A6775); margin:0 0 13px; }
+      .fbk-row { display:flex; gap:10px; align-items:center; margin-bottom:11px; }
+      .fbk-name { font:inherit; font-size:13px; padding:8px 11px; border:1px solid var(--line,#DDE3E9); border-radius:6px; width:150px; background:var(--surface,#fff); color:var(--ink,#141B22); }
+      .fbk-as { font-size:12px; color:var(--faint,#98A4B0); }
+      .fbk-text { font:inherit; font-size:14px; padding:10px 12px; border:1px solid var(--line,#DDE3E9); border-radius:6px; min-height:70px; resize:vertical; width:100%; background:var(--surface,#fff); color:var(--ink,#141B22); }
+      .fbk-go { font:inherit; font-weight:500; letter-spacing:.12em; text-transform:uppercase; font-size:12px; background:var(--ink,#141B22); color:#fff; border:0; border-radius:999px; padding:11px 24px; cursor:pointer; margin-top:12px; }
+      .fbk-go[disabled] { opacity:.55; cursor:default; }
+      .fbk-stat { font-size:12.5px; color:var(--good,#0FA37F); margin-top:10px; min-height:17px; }
+      .fbk-stat.err { color:var(--warn,#B3382C); }
+    </style>
+    <section class="fbk-wrap" aria-label="Suggest a change">
+      <div class="fbk">
+        <p class="fbk-lab">Suggest a change</p>
+        <p class="fbk-hint">See something off, or want something added or changed? Drop it here. Mike reviews these and makes the change &mdash; you never have to touch anything technical.</p>
+        <div class="fbk-row"><input class="fbk-name" id="fbk-name" placeholder="your name" autocomplete="off" /><span class="fbk-as">posting as</span></div>
+        <textarea class="fbk-text" id="fbk-text" placeholder="e.g. On the Vision page, change the tagline to&hellip;"></textarea>
+        <button class="fbk-go" id="fbk-go" type="button">Send to Mike</button>
+        <p class="fbk-stat" id="fbk-stat"></p>
+      </div>
+    </section>
+    <script>
+      (function () {
+        var KEY = 'beam-feedback', NKEY = 'bb-progress-name';
+        var nameEl = document.getElementById('fbk-name'), textEl = document.getElementById('fbk-text'), btn = document.getElementById('fbk-go'), stat = document.getElementById('fbk-stat');
+        if (!btn) return;
+        try { nameEl.value = localStorage.getItem(NKEY) || ''; } catch (e) {}
+        nameEl.addEventListener('change', function () { try { localStorage.setItem(NKEY, nameEl.value.trim()); } catch (e) {} });
+        function pg() { var p = (location.pathname.split('/').pop() || 'index.html').replace(/\.html$/, ''); return p || 'index'; }
+        function send() {
+          var t = (textEl.value || '').trim(); if (!t) { textEl.focus(); return; }
+          var by = (nameEl.value || '').trim() || 'someone';
+          try { if (by !== 'someone') localStorage.setItem(NKEY, by); } catch (e) {}
+          btn.disabled = true; stat.className = 'fbk-stat'; stat.textContent = 'Sending\u2026';
+          var entry = { id: 'f' + Date.now(), by: by, at: new Date().toISOString(), text: t, page: pg() };
+          fetch('/api/tasks?key=' + KEY).then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (j) {
+              var list = (j && j.value && j.value.feedback) ? j.value.feedback : [];
+              list = list.concat([entry]).slice(-300);
+              return fetch('/api/tasks?key=' + KEY, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ value: { feedback: list } }) });
+            })
+            .then(function (r) { if (!r || !r.ok) throw new Error(r ? 'HTTP ' + r.status : 'no response'); return r.json(); })
+            .then(function () { btn.disabled = false; textEl.value = ''; stat.className = 'fbk-stat'; stat.textContent = 'Sent \u2014 Mike will see this. Thanks!'; })
+            .catch(function (e) { btn.disabled = false; stat.className = 'fbk-stat err'; stat.textContent = 'Could not send (' + e.message + '). Try again.'; });
+        }
+        btn.addEventListener('click', send);
+      })();
+    </script>
+</body>
 </html>
