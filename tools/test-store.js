@@ -173,7 +173,8 @@ group('Auto-clean');
 async function loadHandler(name) {
   const s = readFile('api/' + name + '.js')
     .replace("from './_lib/logic.js'", "from '../api/_lib/logic.js'")
-    .replace("from './_lib/store.js'", "from './.store-under-test.mjs'");
+    .replace("from './_lib/store.js'", "from './.store-under-test.mjs'")
+    .replace("from './_lib/mail.js'", "from './.mail-under-test.mjs'");
   writeFile('tools/.' + name + '-under-test.mjs', s);
   return (await import('./.' + name + '-under-test.mjs')).default;
 }
@@ -311,6 +312,128 @@ group('Meetings endpoint');
   await hit(meetings, 'POST', { action: 'add', meeting: { disc: 'another', by: 'T' } }, { sandbox: '1' });
   r = await hit(meetings, 'POST', { action: 'reset' }, { sandbox: '1' });
   eq([r.code, db['beam-meetings-sandbox'].value, JSON.stringify(db['beam-meetings']) === realBefore], [200, { meetings: [] }, true], 'sandbox: it can be emptied, and the real log is still untouched');
+}
+
+group('Suggestion alerts, end to end (with a fake mailbox)');
+{
+  // A stand-in for api/_lib/mail.js: records what would have been sent, and can be told to fail.
+  writeFile('tools/.mail-under-test.mjs', 'export function mailReady() { return globalThis.__mail.ready; }\nexport function adminAddress() { return "mike@hub.test"; }\nexport async function sendMail(to, subject, html, text) { return globalThis.__mail.send(to, subject, html, text); }\n');
+  const box = globalThis.__mail = {
+    ready: true, fail: false, sent: [],
+    async send(to, subject, html, text) { await tick(); if (this.fail) return { ok: false, error: 'smtp down' }; this.sent.push({ to: to, subject: subject, html: html, text: text }); return { ok: true }; },
+  };
+  const feedback = await loadHandler('feedback');
+  const stored = () => L.listOf(db['beam-feedback'].value);
+  const reset = (list) => { db['beam-feedback'] = { value: { feedback: list || [] }, version: (db['beam-feedback'] ? db['beam-feedback'].version : 0) + 1 }; box.sent = []; box.fail = false; box.ready = true; };
+  const patch = (id, fields) => { const cur = db['beam-feedback']; db['beam-feedback'] = { value: { feedback: cur.value.feedback.map((e) => e.id === id ? Object.assign({}, e, fields) : e) }, version: cur.version + 1 }; };
+  const minsAgo = (n) => new Date(Date.now() - n * 60000).toISOString();
+  const last = () => box.sent[box.sent.length - 1];
+  files['whatsnew.json'] = '{"entries":[],"declined":[]}';
+  reset();
+
+  let r = await hit(feedback, 'POST', { by: 'Nate', text: 'Make the logo bigger', page: 'index' });
+  eq([r.code, r.body.alert, box.sent.length], [201, 'sent', 1], 'a suggestion is saved and Mike is emailed at once');
+  eq([box.sent[0].to, box.sent[0].subject], [['mike@hub.test'], 'Suggestion from Nate: Make the logo bigger'], 'the email goes to Mike only, and says who and what');
+  ok(box.sent[0].html.indexOf('Make the logo bigger') > 0 && box.sent[0].html.indexOf('on Our Vision') > 0 && box.sent[0].html.indexOf('Ref ' + r.body.entry.id) > 0, 'with the full text, the page it came from, and its reference');
+  ok(stored()[0].mailed && !stored()[0].mailClaim, 'and it is recorded as mailed');
+  eq(Object.keys(r.body.entry), ['id', 'by', 'at', 'text', 'page'], 'the page that sent it is not shown the private marks');
+  r = await hit(feedback, 'GET');
+  eq([Object.keys(r.body.open[0]), box.sent.length], [['id', 'by', 'at', 'text', 'page'], 1], 'reading the queue shows no private marks and sends nothing more');
+  r = await hit(feedback, 'POST', { by: 'Nate', text: 'Make the logo bigger', page: 'index' });
+  eq([r.body.duplicate, box.sent.length, stored().length], [true, 1, 1], 'a double-click does not email twice');
+
+  box.fail = true;
+  r = await hit(feedback, 'POST', { by: 'Pat', text: 'Sent while mail was down', page: 'guide' });
+  eq([r.code, r.body.alert, stored().length, box.sent.length], [201, 'failed', 2, 1], 'if the email fails, the suggestion is still saved and its sender still sees it accepted');
+  const pat = stored()[1];
+  ok(!pat.mailed && !!pat.mailClaim, 'and it stays marked as not yet mailed');
+  box.fail = false;
+  await hit(feedback, 'GET');
+  eq(box.sent.length, 1, 'a read straight afterwards does not hammer the mail server with a retry');
+  patch(pat.id, { at: minsAgo(10), mailClaim: minsAgo(6) });      // a few minutes pass
+  await hit(feedback, 'GET');
+  eq([box.sent.length, last().subject, !!stored()[1].mailed], [2, 'Suggestion from Pat: Sent while mail was down', true], 'a few minutes later, anyone simply opening the queue sends the alert that failed');
+  await hit(feedback, 'GET');
+  eq(box.sent.length, 2, 'and it is not sent a second time');
+
+  reset();
+  box.ready = false;
+  r = await hit(feedback, 'POST', { by: 'Mike', text: 'Sent before email was set up', page: 'build' });
+  eq([r.code, r.body.alert, box.sent.length, stored().length], [201, 'off', 0, 1], 'before email is set up, suggestions save normally and nothing is sent');
+  await hit(feedback, 'POST', { by: 'Nate', text: 'Another one before setup', page: 'guide' });
+  await hit(feedback, 'GET');
+  eq(box.sent.length, 0, 'reading the queue sends nothing either while email is off');
+  box.ready = true;                                              // Mike adds the two settings
+  stored().forEach((e) => patch(e.id, { at: minsAgo(30) }));
+  await hit(feedback, 'GET');
+  eq([box.sent.length, last().subject], [1, '2 suggestions waiting in the hub'], 'once email is set up, the ones that were waiting go out together in one email');
+  ok(last().text.indexOf('Sent before email was set up') > 0 && last().text.indexOf('Another one before setup') > 0 && stored().every((e) => e.mailed), 'with every one of them in it');
+
+  reset([{ id: 'fwaiting001', by: 'Pat', at: minsAgo(10), text: 'Waiting for its alert', page: 'guide' }]);
+  await Promise.all([hit(feedback, 'GET'), hit(feedback, 'GET'), hit(feedback, 'GET'), hit(feedback, 'GET')]);
+  eq(box.sent.length, 1, 'four people opening the queue at the same moment send that alert once, not four times');
+
+  reset([{ id: 'folder00001', by: 'Pat', at: minsAgo(10), text: 'Older, never mailed', page: 'guide' }]);
+  r = await hit(feedback, 'POST', { by: 'Nate', text: 'Newer', page: 'index' });
+  eq([r.body.alert, box.sent.length, last().subject], ['sent', 1, '2 suggestions waiting in the hub'], 'a new suggestion takes an older unsent one along in the same email');
+  ok(last().text.indexOf('Older, never mailed') < last().text.indexOf('Newer') && stored().every((e) => e.mailed), 'oldest first, and both are then marked as mailed');
+
+  reset();
+  const burst = await Promise.all([1, 2, 3, 4, 5].map((i) => hit(feedback, 'POST', { by: 'P' + i, text: 'At the same moment ' + i, page: 'guide' })));
+  ok(burst.every((o) => o.code === 201) && stored().length === 5, 'five suggestions at the same instant are all saved');
+  const mentioned = [1, 2, 3, 4, 5].filter((i) => box.sent.some((mail) => mail.text.indexOf('At the same moment ' + i) >= 0));
+  eq(mentioned.length, 5, 'and every one of them reaches Mike');
+  const times = [1, 2, 3, 4, 5].map((i) => box.sent.filter((mail) => mail.text.indexOf('At the same moment ' + i) >= 0).length);
+  ok(times.every((n) => n === 1), 'each exactly once', times);
+
+  const sixSent = [1, 2, 3, 4, 5, 6].map((i) => ({ id: 'fsent00000' + i, by: 'Nate', at: minsAgo(9), text: 'earlier ' + i, page: 'guide', mailed: minsAgo(i) }));
+  reset(sixSent);
+  r = await hit(feedback, 'POST', { by: 'Nate', text: 'The seventh in ten minutes', page: 'guide' });
+  eq([r.code, r.body.alert, box.sent.length, stored().length], [201, 'held', 0, 7], 'after six alert emails in ten minutes, the next suggestion is saved but its email is held');
+  sixSent.forEach((e, i) => patch(e.id, { mailed: minsAgo(11 + i) }));
+  patch(stored()[6].id, { at: minsAgo(3) });
+  await hit(feedback, 'GET');
+  eq([box.sent.length, last().subject], [1, 'Suggestion from Nate: The seventh in ten minutes'], 'and it goes out as soon as the ten minutes have passed');
+
+  reset();
+  r = await hit(feedback, 'POST', { by: 'Claude (testing)', text: 'TEST load', page: 'guide', quiet: true });
+  eq([r.body.alert, box.sent.length, stored()[0].mailed], ['skipped', 0, 'skip'], 'a quiet load-test suggestion emails nobody');
+  patch(stored()[0].id, { at: minsAgo(30) });
+  await hit(feedback, 'GET');
+  eq(box.sent.length, 0, 'not later either');
+  r = await hit(feedback, 'POST', { by: 'Claude (testing)', text: 'TEST alert check', page: 'guide' });
+  ok(r.body.alert === 'sent' && last().subject === '[Test] Suggestion from Claude (testing): TEST alert check', 'a test that is not quiet does email, marked [Test]');
+  r = await hit(feedback, 'POST', { by: 'Nate', text: 'A real one asking to be quiet', page: 'guide', quiet: true });
+  eq([r.body.alert, box.sent.length], ['sent', 2], 'a real suggestion cannot be made quiet');
+
+  reset([{ id: 'fcleared001', by: 'Pat', at: minsAgo(10), text: 'Built before its alert went out', page: 'guide' }]);
+  files['whatsnew.json'] = JSON.stringify({ entries: [{ id: 'x', at: minsAgo(1), title: 'Done', what: 'w', resolves: ['fcleared001'] }], declined: [] });
+  r = await hit(feedback, 'GET');
+  eq([r.body.count, r.body.cleared, box.sent.length], [0, 1, 0], 'a suggestion already built and cleared is not emailed about afterwards');
+  files['whatsnew.json'] = '{"entries":[],"declined":[]}';
+}
+
+group('Mail settings (the real module)');
+{
+  writeFile('tools/.mailreal-under-test.mjs', readFile('api/_lib/mail.js').replace("from './logic.js'", "from '../api/_lib/logic.js'"));
+  const M = await import('./.mailreal-under-test.mjs');
+  const env = process.env;
+  eq([M.mailReady(), M.provider(), M.adminAddress()], [false, null, ''], 'with nothing set, the hub cannot send, and knows it');
+  env.DIGEST_TO = 'mike@gmail.test, nate@x.test,pat@y.test';
+  eq([M.mailReady(), M.adminAddress(), M.recipients().length], [false, 'mike@gmail.test', 3], 'the recipient list alone is not enough; the first address is the one alerts go to');
+  env.GMAIL_APP_PASSWORD = 'abcd efgh ijkl mnop';
+  eq([M.mailReady(), M.provider()], [true, 'gmail'], 'the list plus the app password: ready, sending as the first address');
+  delete env.DIGEST_TO;
+  eq([M.mailReady(), M.provider()], [false, null], 'an app password with nobody to send to is not ready');
+  env.GMAIL_USER = 'hub@gmail.test';
+  eq([M.provider(), M.mailReady()], ['gmail', false], 'naming a Gmail account still needs the recipient list');
+  env.DIGEST_TO = 'mike@gmail.test';
+  env.RESEND_API_KEY = 'k'; env.DIGEST_FROM = 'Beam <hub@beam.test>';
+  eq(M.provider(), 'resend', 'a Resend key and sender take over from Gmail');
+  const out = await M.sendMail(['a@b.test'], 's', 'h', 't', 1);
+  ok(out.ok === false && typeof out.error === 'string' && out.error.length > 0, 'a send that blows up is reported as a failure, never thrown', out);
+  eq(M.redact('Invalid login for mike.f@gmail.com (nate@x.org), see <pat@y.co>'), 'Invalid login for [address] ([address]), see <[address]>', 'addresses in an error message are masked');
+  ['DIGEST_TO', 'GMAIL_APP_PASSWORD', 'GMAIL_USER', 'RESEND_API_KEY', 'DIGEST_FROM'].forEach((k) => { delete env[k]; });
 }
 
 group('Store problems are reported, not swallowed');

@@ -270,6 +270,73 @@ group('Test data stays out of the email');
   ok(c.counts.quiet && c.html.indexOf('>Suggestions<') < 0, 'a week with nothing but test activity is still a quiet week');
 }
 
+// ---------------------------------------------------------------- suggestion alerts
+group('Suggestion alerts: which ones get emailed, and when');
+{
+  const iso = (msAgo) => new Date(NOW - msAgo).toISOString();
+  const mk = (id, ageMs, extra) => Object.assign({ id: id, by: 'Nate', at: iso(ageMs), text: 't ' + id, page: 'guide' }, extra || {});
+  const MIN = 60000;
+
+  eq(L.buildSuggestion({ text: 'TEST', by: 'Claude (testing)', quiet: true }, NOW).entry.mailed, 'skip', 'a load test can ask to email nobody');
+  ok(!('mailed' in L.buildSuggestion({ text: 'real', by: 'Nate', quiet: true }, NOW).entry), 'a real suggestion cannot: it always alerts');
+  ok(!('mailed' in L.buildSuggestion({ text: 'TEST', by: 'Claude (testing)' }, NOW).entry), 'a test that does not ask to be quiet alerts too');
+
+  const fresh = mk('fnew0000001', 0);
+  eq(L.pickForAlert([fresh], NOW, 'fnew0000001'), ['fnew0000001'], 'the suggestion just sent is picked');
+  eq(L.pickForAlert([fresh], NOW), [], 'a read does not pick one sent seconds ago (the submit itself is emailing it)');
+  eq(L.pickForAlert([mk('fold0000001', 2 * MIN)], NOW), ['fold0000001'], 'a read picks one that has waited two minutes unmailed');
+  eq(L.pickForAlert([mk('fold0000001', 2 * MIN), fresh], NOW, 'fnew0000001'), ['fold0000001', 'fnew0000001'], 'a new suggestion takes any older waiting ones along in the same email');
+  eq(L.pickForAlert([mk('fdone000001', 2 * MIN, { mailed: iso(MIN) }), mk('fskip000001', 2 * MIN, { mailed: 'skip' })], NOW), [], 'ones already mailed, and quiet tests, are never picked again');
+  eq(L.pickForAlert([mk('fbusy000001', 2 * MIN, { mailClaim: iso(MIN) })], NOW), [], 'one that another request is sending right now is left alone');
+  eq(L.pickForAlert([mk('fstuck00001', 20 * MIN, { mailClaim: iso(6 * MIN) })], NOW), ['fstuck00001'], 'a send that never finished is retried after five minutes');
+  eq(L.pickForAlert([], NOW), [], 'an empty queue picks nothing');
+
+  const six = [1, 2, 3, 4, 5, 6].map((i) => mk('fsent00000' + i, 9 * MIN, { mailed: iso(i * MIN) }));
+  eq(L.pickForAlert(six.concat([fresh]), NOW, 'fnew0000001'), [], 'after six alert emails in ten minutes, the next one is held');
+  const oneEmail = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => mk('fbat00000' + i, 9 * MIN, { mailed: iso(MIN) }));
+  eq(L.pickForAlert(oneEmail.concat([fresh]), NOW, 'fnew0000001'), ['fnew0000001'], 'eight suggestions that went out together in ONE email count as one');
+  const earlier = [1, 2, 3, 4, 5, 6].map((i) => mk('fago00000' + i, 30 * MIN, { mailed: iso(11 * MIN + i * 1000) }));
+  eq(L.pickForAlert(earlier.concat([fresh]), NOW, 'fnew0000001'), ['fnew0000001'], 'and once the ten minutes have passed, it goes out');
+
+  const list = [mk('fa000000001', 0), mk('fb000000001', 0), mk('fc000000001', 0, { mailed: 'skip' })];
+  const claimed = L.claimForAlert(list, ['fa000000001'], 'CLAIM');
+  eq([claimed[0].mailClaim, 'mailClaim' in claimed[1], 'mailClaim' in list[0]], ['CLAIM', false, false], 'claiming marks only the chosen ones, and does not alter the stored list in place');
+  let m = L.markAlerted(claimed, ['fa000000001', 'fc000000001', 'fgone000001'], 'SENT');
+  eq([m.changed, m.list[0].mailed, 'mailClaim' in m.list[0], 'mailed' in m.list[1], m.list[2].mailed], [true, 'SENT', false, false, 'skip'], 'marking records the send, clears the claim, and leaves the others alone');
+  m = L.markAlerted(m.list, ['fa000000001'], 'AGAIN');
+  eq([m.changed, m.list[0].mailed], [false, 'SENT'], 'marking twice changes nothing');
+  eq(L.publicEntry(Object.assign({}, list[0], { mailed: 'x', mailClaim: 'y' })), { id: 'fa000000001', by: 'Nate', at: list[0].at, text: 't fa000000001', page: 'guide' }, 'a browser is given the suggestion without the private marks');
+}
+
+group('Suggestion alerts: the email');
+{
+  const one = { id: 'fmwxr2cj7t3333a', by: 'Nate', at: ago(0), text: 'On the Vision page, change the tagline.\nSecond line <b>bold</b> & "quoted"', page: 'index', mailClaim: 'x' };
+  let a = L.composeAlert([one], 3, NOW);
+  ok(a.subject.indexOf('Suggestion from Nate: On the Vision page, change the tagline.') === 0 && a.subject.indexOf('\n') < 0 && a.subject.length < 100, 'the subject says who and what, on one line', a.subject);
+  ok(a.html.indexOf('Nate suggested a change') > 0 && a.html.indexOf('on Our Vision') > 0, 'the email names who sent it and which page they were on');
+  ok(a.html.indexOf('Nov 29, 6:05 PM MT') > 0 && a.text.indexOf('Nov 29, 6:05 PM MT') > 0, 'and when, in Mountain time, written the same way on every engine');
+  ok(a.html.indexOf('change the tagline.<br>Second line &lt;b&gt;bold&lt;/b&gt; &amp; &quot;quoted&quot;') > 0, 'the suggestion is shown in full, line breaks kept');
+  ok(a.html.indexOf('<b>bold</b>') < 0, 'and anything typed is escaped, so it cannot run as code');
+  ok(a.html.indexOf('Ref fmwxr2cj7t3333a') > 0, 'it carries the reference Mike gives Claude to act on it');
+  ok(a.html.indexOf('3 suggestions open in the queue.') > 0 && a.html.indexOf(L.SITE + '/progress.html#suggestions') > 0, 'it says how many are open and links to the queue');
+  ok(!/undefined|NaN|\[object Object\]|mailClaim/.test(a.html + a.text + a.subject), 'no junk, and no private marks, anywhere in it');
+  eq((a.html.match(/<table/g) || []).length, (a.html.match(/<\/table>/g) || []).length, 'every table that opens also closes');
+  eq((a.html.match(/<div/g) || []).length, (a.html.match(/<\/div>/g) || []).length, 'every div that opens also closes');
+  ok(a.text.indexOf('Second line <b>bold</b> & "quoted"') > 0 && a.text.indexOf('Ref fmwxr2cj7t3333a') > 0 && a.text.indexOf('<td') < 0, 'the plain-text version has the words as typed and none of the template');
+
+  a = L.composeAlert([{ id: 'fb00000002', by: 'Pat', at: ago(0), text: 'Second, newer', page: 'guide' }, { id: 'fa00000001', by: 'Nate', at: ago(1), text: 'First, older', page: 'meetings' }, { id: 'fc00000003', by: 'Mike', at: ago(0.5), text: 'Middle', page: 'progress' }], 5, NOW);
+  eq(a.subject, '3 suggestions waiting in the hub', 'several waiting ones go in one email with a plain subject');
+  ok(a.html.indexOf('3 suggestions are waiting') > 0 && a.html.indexOf('First, older') < a.html.indexOf('Middle') && a.html.indexOf('Middle') < a.html.indexOf('Second, newer'), 'listed oldest first');
+  ok(a.html.indexOf('on Meeting Minutes') > 0 && a.html.indexOf('on Our RoadMap') > 0 && a.html.indexOf('on Guide') > 0, 'each with its own page');
+
+  a = L.composeAlert([{ id: 'ft00000001', by: 'Claude (testing)', at: ago(0), text: 'TEST', page: 'nowhere' }], 1, NOW);
+  ok(a.subject.indexOf('[Test] Suggestion from Claude (testing): TEST') === 0, 'a test suggestion is marked [Test] in the subject', a.subject);
+  ok(a.html.indexOf('on The hub') > 0 && a.html.indexOf('1 suggestion open in the queue.') > 0, 'an unknown page reads as "The hub"; one open reads as singular');
+  a = L.composeAlert([{ id: 'fs00000001', by: 'someone', at: ago(0), text: 'anon', page: 'guide' }], 1, NOW);
+  ok(a.subject === 'Suggestion from Someone: anon' && a.html.indexOf('Someone suggested a change') > 0, 'a suggestion with no name reads naturally');
+  ok(a.html.length < 6000, 'a short email (' + a.html.length + ' bytes)');
+}
+
 // ---------------------------------------------------------------- the board
 group('The board: posts');
 {

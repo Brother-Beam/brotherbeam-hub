@@ -9,6 +9,8 @@
 //   year. Before sending it claims the week in the store, so two runs can never both
 //   send; if a send fails the claim is released and the next slot tries again.
 //
+// Sending itself lives in _lib/mail.js, shared with the suggestion alerts in feedback.js.
+//
 // Setting it up: two Vercel environment variables
 //   DIGEST_TO            who gets it, comma-separated, Mike first. The first address is
 //                        also the Gmail account it is sent from, and where tests go.
@@ -39,7 +41,8 @@
 //   "Authorization: Bearer ..."). Sending to everyone on demand (force) always needs it.
 import { timingSafeEqual } from 'node:crypto';
 import { list } from '@vercel/blob';
-import { compose, decide, localParts, parseRecipients, SCHEDULE_TEXT, TZ } from './_lib/logic.js';
+import { compose, decide, localParts, SCHEDULE_TEXT, TZ } from './_lib/logic.js';
+import { provider, recipients, mailReady, sendMail, short, redact } from './_lib/mail.js';
 import { kvGet, kvUpdate, loadSiteJson, reconcileSuggestions, storeReady } from './_lib/store.js';
 
 export const config = { maxDuration: 60 };
@@ -47,14 +50,6 @@ export const config = { maxDuration: 60 };
 const STATE = 'beam-digest-state';
 const HUB_PW = 'scooter';            // the Library's convenience lock; here it guards the preview and the test send
 const TEST_GAP_MS = 10 * 60 * 1000;  // password-triggered tests: one every 10 minutes
-
-function recipients() { return parseRecipients(process.env.DIGEST_TO); }
-function gmailUser() { return String(process.env.GMAIL_USER || recipients()[0] || '').trim(); }
-function provider() {
-  if (process.env.RESEND_API_KEY && process.env.DIGEST_FROM) return 'resend';
-  if (process.env.GMAIL_APP_PASSWORD && gmailUser()) return 'gmail';
-  return null;
-}
 
 function hasSecret() { return !!process.env.CRON_SECRET; }
 function authorized(req) {
@@ -65,10 +60,6 @@ function authorized(req) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function sleep(n) { return new Promise(function (r) { setTimeout(r, n); }); }
-function short(x) { return String(x == null ? '' : x).slice(0, 300); }
-// Error text from a mail service can name an address. Without the secret, callers get it with addresses masked.
-function redact(x) { return short(x).replace(/[^\s<>"',;:()]+@[^\s<>"',;:()]+/g, '[address]'); }
 function pad(n) { return (n < 10 ? '0' : '') + n; }
 
 async function libraryFiles() {
@@ -94,44 +85,6 @@ async function gather() {
   return { whatsnew: rec.changelog, open: rec.open, progress: got[0].value, meetings: got[1].value, closed: got[2].value, roadmap: got[3].data, files: got[4] };
 }
 
-async function sendOnce(to, subject, html, text) {
-  const which = provider();
-  if (which === 'resend') {
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'content-type': 'application/json' },
-      body: JSON.stringify({ from: process.env.DIGEST_FROM, to: to, subject: subject, html: html, text: text }),
-    });
-    const body = await r.text();
-    return r.ok ? { ok: true } : { ok: false, error: 'Resend said HTTP ' + r.status + ': ' + short(body) };
-  }
-  if (which === 'gmail') {
-    // Loaded here, not at the top: a mail library must never be able to stop this file loading.
-    const mod = await import('nodemailer');
-    const nodemailer = mod.default || mod;
-    const user = gmailUser();
-    const transport = nodemailer.createTransport({
-      host: 'smtp.gmail.com', port: 465, secure: true,
-      auth: { user: user, pass: String(process.env.GMAIL_APP_PASSWORD).replace(/\s+/g, '') },
-    });
-    const info = await transport.sendMail({ from: { name: 'Beam Hub', address: user }, to: to, subject: subject, html: html, text: text });
-    const rejected = (info && info.rejected) || [];
-    return rejected.length ? { ok: false, error: 'Gmail rejected ' + rejected.length + ' of ' + to.length + ' recipients' } : { ok: true };
-  }
-  return { ok: false, error: 'no way to send is set up' };
-}
-
-async function send(to, subject, html, text) {
-  let last = { ok: false, error: 'not attempted' };
-  for (let i = 0; i < 2; i++) {
-    try { last = await sendOnce(to, subject, html, text); }
-    catch (e) { last = { ok: false, error: short((e && e.message) || e) }; }
-    if (last.ok) return last;
-    if (i === 0) await sleep(2500);
-  }
-  return last;
-}
-
 async function status(req, res, now) {
   const to = recipients();
   const which = provider();
@@ -149,7 +102,7 @@ async function status(req, res, now) {
     ready: missing.length === 0 && storeOk,
     schedule: SCHEDULE_TEXT,
     mountainTimeNow: local.weekday + ' ' + local.date + ' ' + pad(local.hour) + ':' + pad(local.minute),
-    configured: { recipients: to.length, sendsWith: which, strictMode: hasSecret(), store: storeOk, library: !!process.env.BLOB_READ_WRITE_TOKEN, mailLibrary: mailLibrary },
+    configured: { recipients: to.length, sendsWith: which, suggestionAlerts: mailReady(), strictMode: hasSecret(), store: storeOk, library: !!process.env.BLOB_READ_WRITE_TOKEN, mailLibrary: mailLibrary },
     missing: missing,
     lastSent: state.lastSent || null,
     lastSentAt: state.lastSentAt || null,
@@ -213,7 +166,7 @@ export default async function handler(req, res) {
       });
       if (tooSoon) { res.status(429).json({ error: 'A test was sent in the last 10 minutes. Check the inbox, or try again shortly.' }); return; }
       const c = compose(await gather(), now.getTime());
-      const sent = await send([to[0]], '[Test] ' + c.subject, c.html, c.text);
+      const sent = await sendMail([to[0]], '[Test] ' + c.subject, c.html, c.text, 2);
       await kvUpdate(STATE, function (s) { return Object.assign({}, s || {}, { lastTest: { at: now.toISOString(), ok: sent.ok, error: sent.ok ? null : short(sent.error) } }); });
       res.status(sent.ok ? 200 : 502).json({ ok: sent.ok, test: true, sentTo: 1, sendsWith: which, counts: c.counts, error: sent.ok ? undefined : (secretOk ? sent.error : redact(sent.error)) });
       return;
@@ -236,7 +189,7 @@ export default async function handler(req, res) {
     let c = null, sent;
     try {
       c = compose(await gather(), now.getTime());
-      sent = await send(to, c.subject, c.html, c.text);
+      sent = await sendMail(to, c.subject, c.html, c.text, 2);
     } catch (e) {
       sent = { ok: false, error: short((e && e.message) || e) };
     }

@@ -53,7 +53,10 @@ export function buildSuggestion(body, nowMs) {
   if (text.length > MAX_TEXT) return { ok: false, status: 400, error: 'That is ' + text.length + ' characters. Keep it under ' + MAX_TEXT + ', or split it into two.' };
   const by = tidy(b.by).replace(/\s+/g, ' ').slice(0, MAX_NAME) || 'someone';
   const page = /^[a-z0-9-]{1,40}$/.test(String(b.page || '')) ? String(b.page) : 'hub';
-  return { ok: true, entry: { id: newId(nowMs), by: by, at: new Date(nowMs).toISOString(), text: text, page: page } };
+  const entry = { id: newId(nowMs), by: by, at: new Date(nowMs).toISOString(), text: text, page: page };
+  // A load test can ask not to email anyone. Only test data may; a real suggestion always alerts.
+  if (b.quiet === true && isTestEntry(entry)) entry.mailed = 'skip';
+  return { ok: true, entry: entry };
 }
 
 // Adds one suggestion to the queue. Never drops anything to make room.
@@ -109,6 +112,104 @@ export function closedRecords(removed, closed, nowIso) {
     if (isTestEntry(f)) rec.test = true;
     return rec;
   });
+}
+
+// ---------- suggestion alerts ----------
+// The moment a suggestion comes in, Mike gets an email with it, so he can act on it
+// straight away instead of finding it in Sunday's summary. Each stored suggestion carries
+// two private marks that browsers never see: `mailed`, when its alert went out ('skip'
+// for a quiet test), and `mailClaim`, set while a request is in the middle of sending it.
+//
+// If the email cannot go out just then (mail not set up yet, a Gmail hiccup), the
+// suggestion simply stays unmailed, and the next request that reads or adds to the queue
+// sends it. So alerts catch up by themselves and nothing depends on a timer.
+
+export const PAGE_NAMES = { guide: 'Guide', index: 'Our Vision', progress: 'Our RoadMap', documents: 'Our Library', meetings: 'Meeting Minutes', build: 'How I built this', hub: 'The hub' };
+export const ALERT_SETTLE_MS = 90 * 1000;      // a read only picks up suggestions older than this, so it never races the submit that is emailing one right now
+export const ALERT_CLAIM_MS = 5 * 60 * 1000;   // how long a claim holds; also the wait before retrying a send that failed
+export const ALERT_WINDOW_MS = 10 * 60 * 1000;
+export const ALERT_MAX_IN_WINDOW = 6;          // alert emails per window; past that, new ones are held and go out together
+
+// What a browser is given: the suggestion, without the private marks.
+export function publicEntry(e) { return { id: e.id, by: e.by, at: e.at, text: e.text, page: e.page }; }
+
+function alertsInWindow(list, nowMs) {
+  const stamps = {};
+  list.forEach(function (e) { if (e && e.mailed && e.mailed !== 'skip' && nowMs - ms(e.mailed) < ALERT_WINDOW_MS) stamps[e.mailed] = 1; });
+  return Object.keys(stamps).length;   // one email can cover several suggestions; they share a stamp
+}
+
+// Which suggestions should be emailed right now. newId is the one just submitted, if any.
+export function pickForAlert(list, nowMs, newId) {
+  if (alertsInWindow(list, nowMs) >= ALERT_MAX_IN_WINDOW) return [];
+  return list.filter(function (e) {
+    if (!e || e.mailed) return false;
+    if (e.mailClaim && nowMs - ms(e.mailClaim) < ALERT_CLAIM_MS) return false;
+    return e.id === newId || nowMs - ms(e.at) > ALERT_SETTLE_MS;
+  }).map(function (e) { return e.id; });
+}
+export function claimForAlert(list, ids, nowIso) {
+  return list.map(function (e) { return ids.indexOf(e.id) >= 0 ? Object.assign({}, e, { mailClaim: nowIso }) : e; });
+}
+export function markAlerted(list, ids, nowIso) {
+  let changed = false;
+  const next = list.map(function (e) {
+    if (ids.indexOf(e.id) < 0 || e.mailed) return e;
+    const c = Object.assign({}, e, { mailed: nowIso });
+    delete c.mailClaim;
+    changed = true;
+    return c;
+  });
+  return { list: next, changed: changed };
+}
+
+// The alert email. One suggestion, or several that were waiting, oldest first.
+export function composeAlert(entries, openCount, nowMs) {
+  const list = (entries || []).slice().sort(function (a, b) { return ms(a.at) - ms(b.at); });
+  const n = list.length;
+  const first = list[0] || {};
+  const name = function (e) { return (e.by && e.by !== 'someone') ? e.by : 'Someone'; };
+  const where = function (e) { return Object.prototype.hasOwnProperty.call(PAGE_NAMES, e.page) ? PAGE_NAMES[e.page] : 'The hub'; };
+  // Date and time are formatted separately and joined here, because engines disagree on how
+  // to join them ("Nov 29, 6:05 PM" or "Nov 29 at 6:05 PM") and on the space before "PM".
+  const when = function (e) {
+    const t = ms(e.at);
+    return dayShort(t) + ', ' + fmt(t, { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ') + ' MT';
+  };
+  const tag = (n > 0 && list.every(isTestEntry)) ? '[Test] ' : '';
+  const subject = tag + (n === 1 ? 'Suggestion from ' + name(first) + ': ' + clip(first.text, 70) : n + ' suggestions waiting in the hub');
+  const headline = n === 1 ? name(first) + ' suggested a change' : n + ' suggestions are waiting';
+  const queue = SITE + '/progress.html#suggestions';
+  const openLine = plural(openCount, 'suggestion') + ' open in the queue.';
+  const closing = 'Once it is built, or you decide to pass on it, it clears itself from the queue.';
+
+  const P = 'margin:0;font-family:' + FONT + ';';
+  const blocks = list.map(function (e) {
+    return '<tr><td style="padding:18px 28px 0;">'
+      + '<div style="' + P + 'font-size:13px;color:' + C.muted + ';"><b style="font-weight:600;color:' + C.ink + ';">' + esc(name(e)) + '</b> &middot; on ' + esc(where(e)) + ' &middot; ' + esc(when(e)) + '</div>'
+      + '<div style="' + P + 'font-size:16px;line-height:1.55;color:' + C.ink + ';margin-top:8px;padding:14px 16px;background:' + C.paper + ';border-left:3px solid ' + C.accent + ';border-radius:6px;">' + esc(e.text).replace(/\n/g, '<br>') + '</div>'
+      + '<div style="' + P + 'font-size:11px;color:' + C.faint + ';margin-top:6px;">Ref ' + esc(e.id) + '</div>'
+      + '</td></tr>';
+  }).join('');
+  const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light only"><title>' + esc(subject) + '</title></head>'
+    + '<body style="margin:0;padding:0;background:' + C.paper + ';">'
+    + '<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">' + esc(clip(first.text, 120)) + '</div>'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="' + C.paper + '" style="background:' + C.paper + ';"><tr><td align="center" style="padding:24px 12px;">'
+    + '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:' + C.surface + ';border:1px solid ' + C.line + ';border-radius:12px;">'
+    + '<tr><td bgcolor="' + C.ink + '" style="background:' + C.ink + ';padding:20px 28px;border-radius:11px 11px 0 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+    + '<td style="' + P + 'font-size:15px;letter-spacing:.24em;color:#ffffff;">BEAM</td>'
+    + '<td align="right" style="' + P + 'font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#9aa6b2;">The hub &middot; suggestion</td>'
+    + '</tr></table></td></tr>'
+    + '<tr><td style="padding:26px 28px 0;"><div style="' + P + 'font-size:23px;line-height:1.25;font-weight:300;color:' + C.ink + ';">' + esc(headline) + '</div></td></tr>'
+    + blocks
+    + '<tr><td style="padding:24px 28px 0;"><a href="' + queue + '" style="' + P + 'display:inline-block;background:' + C.ink + ';color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:13px 26px;border-radius:999px;">Open the queue</a></td></tr>'
+    + '<tr><td style="padding:20px 28px 28px;"><div style="' + P + 'font-size:12px;line-height:1.6;color:' + C.faint + ';">' + esc(openLine) + ' ' + esc(closing) + '</div></td></tr>'
+    + '</table></td></tr></table></body></html>';
+
+  const T = [headline, ''];
+  list.forEach(function (e) { T.push(name(e) + ' · on ' + where(e) + ' · ' + when(e), e.text, 'Ref ' + e.id, ''); });
+  T.push(openLine + ' ' + closing, 'Open the queue: ' + queue);
+  return { subject: subject, html: html, text: T.join('\n') };
 }
 
 // ---------- the board and the meeting log ----------
