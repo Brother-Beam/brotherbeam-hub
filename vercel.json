@@ -18,6 +18,9 @@
     },
     "api/board.js": {
       "includeFiles": "{whatsnew,roadmap}.json"
+    },
+    "api/outbox.js": {
+      "includeFiles": "{whatsnew,roadmap}.json"
     }
   }
 }

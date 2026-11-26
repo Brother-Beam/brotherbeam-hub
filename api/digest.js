@@ -40,10 +40,10 @@
 //   scheduled run then needs the secret too (Vercel Cron sends it automatically as
 //   "Authorization: Bearer ..."). Sending to everyone on demand (force) always needs it.
 import { timingSafeEqual } from 'node:crypto';
-import { list } from '@vercel/blob';
 import { compose, decide, localParts, SCHEDULE_TEXT, TZ } from './_lib/logic.js';
 import { provider, recipients, mailReady, sendMail, short, redact } from './_lib/mail.js';
-import { kvGet, kvUpdate, loadSiteJson, reconcileSuggestions, storeReady } from './_lib/store.js';
+import { kvGet, kvUpdate, storeReady } from './_lib/store.js';
+import { gatherWeek } from './_lib/week.js';
 
 export const config = { maxDuration: 60 };
 
@@ -61,29 +61,6 @@ function authorized(req) {
 }
 
 function pad(n) { return (n < 10 ? '0' : '') + n; }
-
-async function libraryFiles() {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return null;
-  try {
-    let all = [], cursor;
-    for (let i = 0; i < 10; i++) {
-      const page = await list(cursor ? { cursor: cursor } : undefined);
-      all = all.concat(page.blobs || []);
-      if (!page.hasMore || !page.cursor) break;
-      cursor = page.cursor;
-    }
-    return all;
-  } catch (e) { return null; }   // the email says the Library count is unknown rather than guessing zero
-}
-
-// Everything the email is built from. Cleans the suggestions queue first, so the counts are true.
-async function gather() {
-  const rec = await reconcileSuggestions();
-  if (!rec.changelog) throw new Error('could not read whatsnew.json');
-  const got = await Promise.all([kvGet('beam-progress'), kvGet('beam-meetings'), kvGet('beam-feedback-closed'), loadSiteJson('roadmap.json'), libraryFiles()]);
-  if (!got[3].data) throw new Error('could not read roadmap.json');
-  return { whatsnew: rec.changelog, open: rec.open, progress: got[0].value, meetings: got[1].value, closed: got[2].value, roadmap: got[3].data, files: got[4] };
-}
 
 async function status(req, res, now) {
   const to = recipients();
@@ -134,7 +111,7 @@ export default async function handler(req, res) {
         return;
       }
       // &tests=1 also counts suggestions sent under a "(testing)" name, which real emails never do.
-      const c = compose(await gather(), now.getTime(), { includeTests: q.tests === '1' });
+      const c = compose(await gatherWeek(), now.getTime(), { includeTests: q.tests === '1' });
       if (q.format === 'json') { res.status(200).json({ subject: c.subject, counts: c.counts }); return; }
       if (q.format === 'text') { res.setHeader('content-type', 'text/plain; charset=utf-8'); res.status(200).send(c.subject + '\n\n' + c.text); return; }
       res.setHeader('content-type', 'text/html; charset=utf-8');
@@ -165,7 +142,7 @@ export default async function handler(req, res) {
         return tooSoon ? undefined : Object.assign({}, cur, { lastTest: { at: now.toISOString(), ok: null } });
       });
       if (tooSoon) { res.status(429).json({ error: 'A test was sent in the last 10 minutes. Check the inbox, or try again shortly.' }); return; }
-      const c = compose(await gather(), now.getTime());
+      const c = compose(await gatherWeek(), now.getTime());
       const sent = await sendMail([to[0]], '[Test] ' + c.subject, c.html, c.text, 2);
       await kvUpdate(STATE, function (s) { return Object.assign({}, s || {}, { lastTest: { at: now.toISOString(), ok: sent.ok, error: sent.ok ? null : short(sent.error) } }); });
       res.status(sent.ok ? 200 : 502).json({ ok: sent.ok, test: true, sentTo: 1, sendsWith: which, counts: c.counts, error: sent.ok ? undefined : (secretOk ? sent.error : redact(sent.error)) });
@@ -188,7 +165,7 @@ export default async function handler(req, res) {
 
     let c = null, sent;
     try {
-      c = compose(await gather(), now.getTime());
+      c = compose(await gatherWeek(), now.getTime());
       sent = await sendMail(to, c.subject, c.html, c.text, 2);
     } catch (e) {
       sent = { ok: false, error: short((e && e.message) || e) };

@@ -20,6 +20,7 @@ function group(t) { print('\n' + t); }
 const db = {};                       // key -> { value, version }
 let reads = 0, writes = 0, conflicts = 0;
 let failNextWrites = 0;              // make the next N writes hit a 409, as if someone else wrote first
+let brokenKey = '';                  // reads and writes of this key fail, as if the store had a problem with it
 let files = {};                      // what "the deploy" has on disk
 let siteUp = true;
 const tick = () => new Promise((r) => setTimeout(r, Math.floor(Math.random() * 4)));
@@ -32,6 +33,7 @@ globalThis.fetch = async function (url, opts) {
   await tick();
   if (url.indexOf('https://store.test/api/kv/') === 0) {
     const key = url.split('/api/kv/')[1];
+    if (key === brokenKey) return res(500, { error: 'boom' });
     const row = db[key] || { value: null, version: 0 };
     if (!opts || !opts.method || opts.method === 'GET') { reads++; return res(200, { key: key, value: JSON.parse(JSON.stringify(row.value)), version: row.version }); }
     const body = JSON.parse(opts.body);
@@ -174,16 +176,47 @@ async function loadHandler(name) {
   const s = readFile('api/' + name + '.js')
     .replace("from './_lib/logic.js'", "from '../api/_lib/logic.js'")
     .replace("from './_lib/store.js'", "from './.store-under-test.mjs'")
-    .replace("from './_lib/mail.js'", "from './.mail-under-test.mjs'");
+    .replace("from './_lib/mail.js'", "from './.mail-under-test.mjs'")
+    .replace("from './_lib/alerts.js'", "from './.alerts-under-test.mjs'")
+    .replace("from './_lib/week.js'", "from './.week-under-test.mjs'")
+    .replace("from '@vercel/blob'", "from './.blob-under-test.mjs'");
   writeFile('tools/.' + name + '-under-test.mjs', s);
   return (await import('./.' + name + '-under-test.mjs')).default;
 }
-function hit(handler, method, body, query) {
+function hit(handler, method, body, query, headers) {
   const res = { code: 0, body: null, headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(c) { this.code = c; return this; }, json(o) { this.body = o; return this; }, send(o) { this.body = o; return this; } };
-  return handler({ method: method, body: body, query: query || {}, headers: {} }, res).then(() => res);
+  return handler({ method: method, body: body, query: query || {}, headers: headers || {} }, res).then(() => res);
 }
+
+// Stand-ins for the two things the endpoints reach outside for: the mailbox and the file
+// store. The mailbox records what would have been sent and can be told to fail. Email
+// starts switched off, as it is on the live site until a sender is set up.
+writeFile('tools/.mail-under-test.mjs', [
+  'export function mailReady() { return globalThis.__mail.ready; }',
+  'export function adminAddress() { return "mike@hub.test"; }',
+  'export async function sendMail(to, subject, html, text) { return globalThis.__mail.send(to, subject, html, text); }',
+  'export async function sendWithin(to, subject, html, text) { return globalThis.__mail.send(to, subject, html, text); }',
+].join('\n') + '\n');
+writeFile('tools/.blob-under-test.mjs', 'export async function list() { if (globalThis.__blobsBroken) throw new Error("blob store down"); return { blobs: globalThis.__blobs || [] }; }\n');
+globalThis.__blobs = [];
+const box = globalThis.__mail = {
+  ready: false, fail: false, sent: [],
+  async send(to, subject, html, text) { await tick(); if (this.fail) return { ok: false, error: 'smtp down' }; this.sent.push({ to: to, subject: subject, html: html, text: text }); return { ok: true }; },
+};
+const last = () => box.sent[box.sent.length - 1];
+const minsAgo = (n) => new Date(Date.now() - n * 60000).toISOString();
+// The real alerts and weekly-gathering modules, pointed at the stand-ins.
+function realLib(name) {
+  let src = readFile('api/_lib/' + name + '.js')
+    .replace("from './logic.js'", "from '../api/_lib/logic.js'")
+    .replace("from './store.js'", "from './.store-under-test.mjs'")
+    .replace("from './mail.js'", "from './.mail-under-test.mjs'")
+    .replace("from '@vercel/blob'", "from './.blob-under-test.mjs'");
+  writeFile('tools/.' + name + '-under-test.mjs', src);
+}
+realLib('alerts');
 siteUp = true;
-files = { 'roadmap.json': JSON.stringify({ now: [{ id: 'outline' }], next: [{ id: 'process' }, { id: 'sandbox' }] }), 'whatsnew.json': '{"entries":[],"declined":[]}' };
+files = { 'roadmap.json': JSON.stringify({ now: [{ id: 'outline', own: 'Pat', t: 'Outline a deliverable' }], next: [{ id: 'process', own: 'All three', t: 'Develop the process' }, { id: 'sandbox', own: 'All three', t: 'Put together the sandbox offer' }] }), 'whatsnew.json': '{"entries":[],"declined":[]}' };
 
 group('Board endpoint');
 {
@@ -316,18 +349,10 @@ group('Meetings endpoint');
 
 group('Suggestion alerts, end to end (with a fake mailbox)');
 {
-  // A stand-in for api/_lib/mail.js: records what would have been sent, and can be told to fail.
-  writeFile('tools/.mail-under-test.mjs', 'export function mailReady() { return globalThis.__mail.ready; }\nexport function adminAddress() { return "mike@hub.test"; }\nexport async function sendMail(to, subject, html, text) { return globalThis.__mail.send(to, subject, html, text); }\n');
-  const box = globalThis.__mail = {
-    ready: true, fail: false, sent: [],
-    async send(to, subject, html, text) { await tick(); if (this.fail) return { ok: false, error: 'smtp down' }; this.sent.push({ to: to, subject: subject, html: html, text: text }); return { ok: true }; },
-  };
   const feedback = await loadHandler('feedback');
   const stored = () => L.listOf(db['beam-feedback'].value);
   const reset = (list) => { db['beam-feedback'] = { value: { feedback: list || [] }, version: (db['beam-feedback'] ? db['beam-feedback'].version : 0) + 1 }; box.sent = []; box.fail = false; box.ready = true; };
   const patch = (id, fields) => { const cur = db['beam-feedback']; db['beam-feedback'] = { value: { feedback: cur.value.feedback.map((e) => e.id === id ? Object.assign({}, e, fields) : e) }, version: cur.version + 1 }; };
-  const minsAgo = (n) => new Date(Date.now() - n * 60000).toISOString();
-  const last = () => box.sent[box.sent.length - 1];
   files['whatsnew.json'] = '{"entries":[],"declined":[]}';
   reset();
 
@@ -411,6 +436,215 @@ group('Suggestion alerts, end to end (with a fake mailbox)');
   r = await hit(feedback, 'GET');
   eq([r.body.count, r.body.cleared, box.sent.length], [0, 1, 0], 'a suggestion already built and cleared is not emailed about afterwards');
   files['whatsnew.json'] = '{"entries":[],"declined":[]}';
+}
+
+group('The outbox: email handed to Claude to deliver');
+{
+  realLib('week');
+  const outbox = await loadHandler('outbox');
+  const board = await loadHandler('board'), meetings = await loadHandler('meetings'), feedback = await loadHandler('feedback'), bloblist = await loadHandler('blob-list');
+  const PW = { pw: 'scooter' };
+  const put = (key, value) => { db[key] = { value: value, version: ((db[key] || {}).version || 0) + 1 }; };
+  const noWeekly = () => put('beam-digest-state', { lastSent: '2099-01-01' });   // keep the weekly summary out of the way until its own tests
+  box.ready = false; box.fail = false; box.sent = [];                            // the hub cannot send: this is how the live site is set up
+  process.env.BLOB_READ_WRITE_TOKEN = 't';
+  files['whatsnew.json'] = '{"entries":[],"declined":[]}';
+  put('beam-feedback', { feedback: [] });
+  put('beam-progress', { items: {}, messages: [{ by: 'Nate', at: minsAgo(600), text: 'A post from long before alerts existed' }] });
+  put('beam-meetings', { meetings: [{ id: 'mold', date: '2026-11-01', title: 'An old meeting', disc: 'old', decisions: [], actionItems: [], prog: '', by: 'Pat', at: minsAgo(900), source: 'manual' }] });
+  delete db['beam-alert-state'];
+  globalThis.__blobs = [{ pathname: 'Old file-AbCdEfGhIjKlMnOpQrStUvWx.pdf', uploadedAt: new Date(Date.now() - 3600000), size: 5000 }];
+  noWeekly();
+
+  let r = await hit(outbox, 'GET', null, {});
+  eq(r.code, 401, 'the outbox needs the hub password');
+  r = await hit(outbox, 'GET', null, PW);
+  eq([r.code, r.body.count], [200, 0], 'first collection: nothing that was already in the hub is offered as news');
+
+  // A day in the hub, with email switched off as it is on the live site.
+  await hit(feedback, 'POST', { by: 'Nate', text: 'Make the logo bigger', page: 'index' });
+  await hit(board, 'POST', { action: 'post', by: 'Pat', text: 'Deck is ready for review' });
+  await hit(board, 'POST', { action: 'post', by: 'Mike', text: 'My own post' });
+  await hit(board, 'POST', { action: 'status', id: 'outline', status: 'done', by: 'Pat' });
+  await hit(board, 'POST', { action: 'status', id: 'process', status: 'progress', by: 'michael fitzgerald' });
+  await hit(meetings, 'POST', { action: 'add', meeting: { date: '2026-11-26', title: 'Weekly sync', disc: 'We covered the outline.', decisions: ['a'], actionItems: [], by: 'Nate', source: 'ai' } });
+  globalThis.__blobs.push({ pathname: 'Beam Deck v2-ZyXwVuTsRqPoNmLkJiHgFeDc.pptx', uploadedAt: new Date(), size: 2202009 });
+  await hit(board, 'POST', { action: 'post', by: 'Nate', text: 'Done in the sandbox' }, { sandbox: '1' });
+  eq(box.sent.length, 0, 'the hub itself sends nothing: it has no way to');
+  const sug = L.listOf(db['beam-feedback'].value)[0];
+  put('beam-feedback', { feedback: [Object.assign({}, sug, { at: minsAgo(5) })] });   // a few minutes pass
+
+  r = await hit(outbox, 'GET', null, PW);
+  eq(r.body.mail.map((m) => m.subject).sort(), [
+    'Nate logged a meeting: Weekly sync',
+    'New file in the Library: Beam Deck v2.pptx',
+    'Pat moved "Outline a deliverable" to Done',
+    'Pat posted on the board: Deck is ready for review',
+    'Suggestion from Nate: Make the logo bigger',
+  ], 'Claude collects: one email each for the suggestion, the post, the status change, the meeting and the upload');
+  ok(r.body.mail.every((m) => m.to === 'mike'), 'each is addressed to Mike by role');
+  ok(JSON.stringify(r.body).indexOf('@') < 0, 'and no email address appears anywhere in what the hub hands over');
+  ok(r.body.mail.every((m) => m.text && m.html && m.html.length < 12000), 'each comes with a plain-text body and a small HTML body');
+  ok(!/My own post|Done in the sandbox|Develop the process|long before|An old meeting|Old file/.test(JSON.stringify(r.body)), 'Mike\'s own actions, the sandbox, and everything from before are left out');
+  const keys = r.body.mail.map((m) => m.key);
+
+  r = await hit(outbox, 'GET', null, PW);
+  eq(r.body.count, 0, 'collected again a moment later: nothing is handed out twice');
+  r = await hit(outbox, 'POST', { sent: keys }, PW);
+  eq([r.code, r.body.recorded], [200, 5], 'Claude reports all five sent');
+  r = await hit(outbox, 'GET', null, PW);
+  eq(r.body.count, 0, 'and they are never offered again');
+  const marked = L.listOf(db['beam-feedback'].value)[0];
+  ok(!!marked.mailed && !marked.mailClaim, 'the suggestion is recorded as mailed');
+  r = await hit(feedback, 'GET');
+  eq(Object.keys(r.body.open[0]), ['id', 'by', 'at', 'text', 'page'], 'while the queue page still shows it without any private marks');
+
+  await hit(board, 'POST', { action: 'post', by: 'Nate', text: 'Collected but never sent' });
+  r = await hit(outbox, 'GET', null, PW);
+  eq(r.body.count, 1, 'a new post is collected');
+  r = await hit(outbox, 'GET', null, PW);
+  eq(r.body.count, 0, 'the collector goes quiet without reporting back; for now it is not offered again');
+  put('beam-alert-state', Object.assign({}, db['beam-alert-state'].value, { claim: { posts: minsAgo(6) } }));
+  r = await hit(outbox, 'GET', null, PW);
+  eq([r.body.count, r.body.mail[0].subject], [1, 'Nate posted on the board: Collected but never sent'], 'a few minutes later it is offered again, so a crashed delivery loses nothing');
+  await hit(outbox, 'POST', { sent: [r.body.mail[0].key] }, PW);
+
+  await hit(board, 'POST', { action: 'post', by: 'Pat', text: 'Seen by a dry run' });
+  const before = JSON.stringify(db['beam-alert-state']);
+  r = await hit(outbox, 'GET', null, { pw: 'scooter', dry: '1' });
+  eq([r.body.count, r.body.dry, JSON.stringify(db['beam-alert-state']) === before], [1, true, true], 'a dry run shows what is waiting and changes nothing');
+  r = await hit(outbox, 'GET', null, PW);
+  eq(r.body.count, 1, 'so the real collection still gets it');
+  await hit(outbox, 'POST', { sent: [r.body.mail[0].key] }, PW);
+
+  r = await hit(outbox, 'POST', { sent: ['nonsense', 'a|posts|' + new Date(Date.now() + 3600000).toISOString(), null, 'w|2099-12-27', 's|x'] }, PW);
+  eq(r.body.recorded, 0, 'made-up keys record nothing');
+  r = await hit(outbox, 'POST', { sent: keys }, PW);
+  r = await hit(outbox, 'GET', null, PW);
+  eq(r.body.count, 0, 'reporting the same emails sent twice does no harm');
+
+  await hit(board, 'POST', { action: 'post', by: 'Nate', text: 'Three collectors at once' });
+  const three = await Promise.all([hit(outbox, 'GET', null, PW), hit(outbox, 'GET', null, PW), hit(outbox, 'GET', null, PW)]);
+  eq(three.reduce((n, o) => n + o.body.count, 0), 1, 'three collectors at the same instant: the email is handed to exactly one of them');
+  await hit(outbox, 'POST', { sent: three.filter((o) => o.body.count)[0].body.mail.map((m) => m.key) }, PW);
+
+  globalThis.__blobsBroken = true;
+  await hit(board, 'POST', { action: 'post', by: 'Pat', text: 'While the Library was unreachable' });
+  r = await hit(outbox, 'GET', null, PW);
+  eq([r.code, r.body.count], [200, 1], 'if the Library cannot be read, the other alerts still come through');
+  globalThis.__blobsBroken = false;
+  await hit(outbox, 'POST', { sent: [r.body.mail[0].key] }, PW);
+
+  // The weekly summary. These pin the clock to a Sunday evening, then a Tuesday.
+  put('beam-digest-state', {});
+  r = await hit(outbox, 'GET', null, { pw: 'scooter', dry: '1', now: '2026-11-30T01:30:00Z' });
+  let weekly = r.body.mail.filter((m) => m.to === 'everyone');
+  eq([weekly.length, weekly[0] && weekly[0].key], [1, 'w|2026-11-29'], 'Sunday 6:30 PM Mountain (dry run): the weekly summary is waiting, addressed to everyone');
+  ok(/^Beam · /.test(weekly[0].subject) && weekly[0].text.indexOf('WHERE WE STAND') > 0 && weekly[0].text.indexOf('Outline a deliverable') > 0, 'with the roadmap in it');
+  eq(db['beam-digest-state'].value, {}, 'and the dry run claimed nothing');
+  r = await hit(outbox, 'GET', null, { pw: 'scooter', dry: '1', now: '2026-12-04T18:00:00Z' });
+  eq(r.body.mail.filter((m) => m.to === 'everyone').length, 0, 'on a Friday (dry run): no weekly summary');
+  r = await hit(outbox, 'GET', null, { pw: 'scooter', dry: '1', now: 'banana' });
+  eq(r.code, 400, 'a nonsense date is refused');
+
+  const realNow = Date.now;
+  Date.now = () => Date.UTC(2026, 10, 30, 1, 30);            // Sunday Nov 29, 6:30 PM Mountain
+  r = await hit(outbox, 'GET', null, PW);
+  weekly = r.body.mail.filter((m) => m.to === 'everyone');
+  const again = await hit(outbox, 'GET', null, PW);
+  eq([weekly.length, weekly[0] && weekly[0].key, again.body.mail.filter((m) => m.to === 'everyone').length], [1, 'w|2026-11-29', 0], 'Sunday evening for real: collected once, and not handed out again a moment later');
+  r = await hit(outbox, 'POST', { sent: ['w|2026-11-29'] }, PW);      // still Sunday evening
+  Date.now = realNow;
+  const ds = db['beam-digest-state'].value;
+  eq([r.body.recorded, ds.lastSent, ds.lastVia, 'claim' in ds], [1, '2026-11-29', 'outbox', false], 'Claude reports it sent: the week is recorded as done');
+  Date.now = () => Date.UTC(2026, 11, 1, 16, 0);             // Tuesday morning
+  r = await hit(outbox, 'GET', null, PW);
+  Date.now = realNow;
+  eq(r.body.mail.filter((m) => m.to === 'everyone').length, 0, 'so on Tuesday it is not sent a second time');
+
+  put('beam-digest-state', {});
+  Date.now = () => Date.UTC(2026, 11, 1, 16, 0);             // Tuesday morning, and Sunday's never went (the Mac was off)
+  r = await hit(outbox, 'GET', null, PW);
+  Date.now = realNow;
+  weekly = r.body.mail.filter((m) => m.to === 'everyone');
+  eq([weekly.length, weekly[0] && weekly[0].key], [1, 'w|2026-11-29'], 'if the Mac was off all Sunday, the summary is still waiting on Tuesday, for the same week');
+
+  brokenKey = 'beam-meetings';
+  r = await hit(outbox, 'GET', null, PW);
+  brokenKey = '';
+  eq(r.code, 502, 'if the store has a problem the collector is told, rather than handed a half-built list');
+  noWeekly();
+}
+
+group('Alerts when the hub can send its own email');
+{
+  const board = await loadHandler('board'), meetings = await loadHandler('meetings'), bloblist = await loadHandler('blob-list');
+  const put = (key, value) => { db[key] = { value: value, version: ((db[key] || {}).version || 0) + 1 }; };
+  box.ready = true; box.fail = false; box.sent = [];
+  put('beam-progress', { items: {}, messages: [{ by: 'Nate', at: minsAgo(600), text: 'From long before' }] });
+  put('beam-meetings', { meetings: [] });
+  delete db['beam-alert-state'];
+  globalThis.__blobs = [{ pathname: 'Old file-AbCdEfGhIjKlMnOpQrStUvWx.pdf', uploadedAt: new Date(Date.now() - 3600000), size: 5000 }];
+
+  await hit(board, 'GET');
+  await hit(meetings, 'GET');
+  let r = await hit(bloblist, 'GET', null, { pw: 'scooter' });
+  eq([r.code, r.body.files.length, box.sent.length], [200, 1, 0], 'first look at the board, the meetings and the Library: nothing old is emailed');
+
+  r = await hit(board, 'POST', { action: 'post', by: 'Nate', text: 'Deck is ready for review' });
+  eq([r.code, box.sent.length, last().to, last().subject], [201, 1, ['mike@hub.test'], 'Nate posted on the board: Deck is ready for review'], 'someone posts: Mike is emailed with that very request');
+  r = await hit(board, 'POST', { action: 'post', by: 'Michael FitzGerald', text: 'Thanks, looking now' });
+  eq([r.code, box.sent.length], [201, 1], 'Mike posts: he is not emailed about his own post');
+  r = await hit(board, 'POST', { action: 'status', id: 'outline', status: 'done', by: 'Pat' });
+  eq([r.code, box.sent.length, last().subject], [200, 2, 'Pat moved "Outline a deliverable" to Done'], 'someone changes a roadmap status: emailed, with the step\'s real title');
+  r = await hit(meetings, 'POST', { action: 'add', meeting: { date: '2026-11-26', title: 'Weekly sync', disc: 'We covered the outline.', decisions: ['a', 'b'], actionItems: [{ item: 'x', owner: 'Pat' }], by: 'Pat', source: 'ai' } });
+  eq([r.code, box.sent.length, last().subject], [201, 3, 'Pat logged a meeting: Weekly sync'], 'someone logs a meeting: emailed');
+  ok(last().text.indexOf('We covered the outline.') > 0 && last().text.indexOf('2 decisions, 1 action item') > 0, 'with the gist and the counts');
+  r = await hit(meetings, 'POST', { action: 'remove', id: r.body.meeting.id });
+  eq(box.sent.length, 3, 'removing a meeting emails nobody');
+
+  globalThis.__blobs.push({ pathname: 'Beam Deck v2-ZyXwVuTsRqPoNmLkJiHgFeDc.pptx', uploadedAt: new Date(), size: 2202009 });
+  r = await hit(bloblist, 'GET', null, { pw: 'scooter' }, { 'x-hub-by': 'Nate' });
+  eq([box.sent.length, last().subject], [4, 'New file in the Library: Beam Deck v2.pptx'], 'someone uploads a file: emailed, with its clean name');
+  ok(last().text.indexOf('2.1 MB') > 0 && last().text.indexOf('Nate') >= 0, 'its size, and who uploaded it');
+  globalThis.__blobs.push({ pathname: 'Mikes notes-ZyXwVuTsRqPoNmLkJiHgFeDc.docx', uploadedAt: new Date(Date.now() + 5), size: 100 });
+  await hit(bloblist, 'GET', null, { pw: 'scooter' }, { 'x-hub-by': 'Mike' });
+  eq(box.sent.length, 4, 'Mike uploads a file: he is not emailed about it');
+  globalThis.__blobs.push({ pathname: 'One-ZyXwVuTsRqPoNmLkJiHgFeDc.pdf', uploadedAt: new Date(Date.now() + 10), size: 1 }, { pathname: 'Two-ZyXwVuTsRqPoNmLkJiHgFeDc.pdf', uploadedAt: new Date(Date.now() + 11), size: 2 });
+  await hit(bloblist, 'GET', null, { pw: 'scooter' });
+  eq([box.sent.length, last().subject], [5, '2 new files in the Library'], 'two files uploaded together arrive as one email');
+  r = await hit(bloblist, 'GET', null, { pw: 'wrong' });
+  eq([r.code, box.sent.length], [401, 5], 'the Library list still needs its password');
+
+  await hit(board, 'POST', { action: 'post', by: 'Nate', text: 'In the sandbox' }, { sandbox: '1' });
+  await hit(board, 'POST', { action: 'status', id: 'sandbox', status: 'done', by: 'Nate' }, { sandbox: '1' });
+  await hit(meetings, 'POST', { action: 'add', meeting: { disc: 'sandbox meeting', by: 'Nate' } }, { sandbox: '1' });
+  eq(box.sent.length, 5, 'nothing done in the sandbox ever emails anyone');
+
+  r = await hit(board, 'POST', { action: 'post', by: 'Nate', text: 'The sixth alert in ten minutes' });
+  eq(box.sent.length, 6, 'a sixth alert in ten minutes still goes');
+  r = await hit(board, 'POST', { action: 'post', by: 'Nate', text: 'The seventh is held' });
+  eq([r.code, box.sent.length], [201, 6], 'the seventh is saved as normal, but its email is held');
+  put('beam-alert-state', Object.assign({}, db['beam-alert-state'].value, { sent: [] }));      // ten minutes pass
+  await hit(board, 'GET');
+  eq([box.sent.length, last().subject], [7, 'Nate posted on the board: The seventh is held'], 'and goes out once the ten minutes have passed, just from someone opening the page');
+
+  box.fail = true;
+  r = await hit(board, 'POST', { action: 'post', by: 'Pat', text: 'Posted while mail was down' });
+  eq([r.code, box.sent.length, r.body.board.messages.some((m) => m.text === 'Posted while mail was down')], [201, 7, true], 'if the email fails, the post is still saved and still shows');
+  box.fail = false;
+  await hit(board, 'GET');
+  eq(box.sent.length, 7, 'a read straight afterwards does not hammer the mail server');
+  put('beam-alert-state', Object.assign({}, db['beam-alert-state'].value, { claim: { posts: minsAgo(6) }, sent: [] }));
+  await Promise.all([hit(board, 'GET'), hit(board, 'GET'), hit(board, 'GET'), hit(board, 'GET')]);
+  eq([box.sent.length, last().subject], [8, 'Pat posted on the board: Posted while mail was down'], 'a few minutes later four people open the board at once: the missed alert goes out, once');
+
+  brokenKey = 'beam-alert-state';
+  r = await hit(board, 'POST', { action: 'post', by: 'Nate', text: 'Posted while the alert record was broken' });
+  const read = await hit(board, 'GET');
+  brokenKey = '';
+  eq([r.code, read.code, read.body.messages.some((m) => m.text === 'Posted while the alert record was broken')], [201, 200, true], 'a problem in the alert machinery never breaks posting or reading');
+  box.ready = false;
 }
 
 group('Mail settings (the real module)');

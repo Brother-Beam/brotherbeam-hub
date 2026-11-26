@@ -9,8 +9,8 @@
 var bad = 0, checked = 0;
 function report(ok, what, err) { checked++; if (!ok) bad++; print((ok ? '  ok    ' : '  FAIL  ') + what + (err ? '   -> ' + err : '')); }
 
-['api/board.js', 'api/meetings.js', 'api/feedback.js', 'api/digest.js', 'api/parse-notes.js', 'api/blob-upload.js', 'api/blob-list.js', 'api/blob-delete.js', 'api/blob-get.js',
- 'api/_lib/logic.js', 'api/_lib/store.js', 'api/_lib/mail.js', 'tools/test-logic.js', 'tools/test-store.js'].forEach(function (f) {
+['api/board.js', 'api/meetings.js', 'api/feedback.js', 'api/outbox.js', 'api/digest.js', 'api/parse-notes.js', 'api/blob-upload.js', 'api/blob-list.js', 'api/blob-delete.js', 'api/blob-get.js',
+ 'api/_lib/logic.js', 'api/_lib/store.js', 'api/_lib/mail.js', 'api/_lib/alerts.js', 'api/_lib/week.js', 'tools/test-logic.js', 'tools/test-store.js'].forEach(function (f) {
   try { checkModuleSyntax(readFile(f)); report(true, f); } catch (e) { report(false, f, String(e)); }
 });
 

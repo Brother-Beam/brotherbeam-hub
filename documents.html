@@ -155,8 +155,12 @@
         function baseName(p) { var s = String(p || '').split('/').pop(); return s.replace(/-[a-zA-Z0-9]{20,}(?=\.[^.]+$)/, ''); }
         function setStatus(msg, err) { statusEl.textContent = msg || ''; statusEl.className = 'status' + (err ? ' err' : ''); }
 
-        function loadFiles() {
-          fetch('/api/blob-list?pw=' + encodeURIComponent(PW)).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        // mine: this list follows our own upload. The name this device remembers is sent
+        // along so the hub knows whose upload it was (and does not email Mike about his own).
+        function loadFiles(mine) {
+          var who = '';
+          if (mine) { try { who = localStorage.getItem('bb-progress-name') || localStorage.getItem('bb-meetings-name') || ''; } catch (e) {} }
+          fetch('/api/blob-list?pw=' + encodeURIComponent(PW), who ? { headers: { 'x-hub-by': who } } : undefined).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function (j) {
               var files = (j && j.files) || [];
               if (!files.length) { filesEl.innerHTML = '<div class="empty">No documents yet. Add the first one above.</div>'; return; }
@@ -198,7 +202,6 @@
               onUploadProgress: function (p) { if (p && p.percentage != null) pfill.style.width = Math.round(p.percentage) + '%'; }
             });
             setStatus('Added ' + file.name + '.');
-            loadFiles();
           } catch (e) {
             setStatus('Upload failed: ' + ((e && e.message) || e), true);
           } finally {
@@ -208,6 +211,7 @@
         async function handleFiles(fileList) {
           var arr = Array.prototype.slice.call(fileList || []);
           for (var i = 0; i < arr.length; i++) { await doUpload(arr[i]); }
+          loadFiles(true);      // once, after the whole batch: one refresh, and one alert covering every file
         }
 
         drop.addEventListener('click', function () { picker.click(); });

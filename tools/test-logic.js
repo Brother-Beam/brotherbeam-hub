@@ -337,6 +337,156 @@ group('Suggestion alerts: the email');
   ok(a.html.length < 6000, 'a short email (' + a.html.length + ' bytes)');
 }
 
+// ---------------------------------------------------------------- activity alerts
+group('Activity alerts: when Mike is emailed');
+{
+  const names = L.adminNames('');
+  eq(names, ['mike', 'michael'], 'by default, "Mike" and "Michael" are recognised as Mike');
+  ok(L.isAdminName('Mike', names) && L.isAdminName('  michael FitzGerald', names) && L.isAdminName('MIKE F', names), 'however he typed his name');
+  ok(!L.isAdminName('Nate', names) && !L.isAdminName('Pat Michael', names) && !L.isAdminName('Mikey', names) && !L.isAdminName('', names) && !L.isAdminName(null, names), 'and nobody else is mistaken for him');
+  eq(L.adminNames('Michael; mf,  Boss'), ['michael', 'mf', 'boss'], 'the list can be changed with a setting');
+
+  const opts = { admins: names, mailReady: true };
+  const t = (minsAgo) => new Date(NOW - minsAgo * 60000).toISOString();
+  const post = (by, minsAgo, text) => ({ t: t(minsAgo), by: by, text: text || 'x' });
+
+  let d = L.decideActivity({}, 'posts', [post('Nate', 600)], NOW, opts);
+  eq([d.status, d.next.seen.posts, 'pending' in d], ['init', t(1), false], 'first look, only old items: start watching from a minute ago and email nothing');
+  d = L.decideActivity(null, 'posts', [post('Nate', 600, 'old'), post('Pat', 0.1, 'just now')], NOW, opts);
+  eq([d.status, d.pending.map((x) => x.text)], ['send', ['just now']], 'first look caused by a brand-new item: that item is news, the old one is not');
+  ok(d.next.seen.posts === t(1), 'and the starting point is stored either way');
+
+  const base = { seen: { posts: t(30), files: t(30) }, sent: [], claim: {} };
+  d = L.decideActivity(base, 'posts', [post('Nate', 60)], NOW, opts);
+  eq([d.status, 'next' in d], ['none', false], 'nothing newer than what Mike was told: nothing to do, nothing to store');
+  d = L.decideActivity(base, 'posts', [post('Pat', 2, 'newer'), post('Nate', 60, 'old'), post('Nate', 5, 'new one')], NOW, opts);
+  eq([d.status, d.pending.map((x) => x.text), d.advanceTo, d.next.claim.posts], ['send', ['new one', 'newer'], t(2), new Date(NOW).toISOString()], 'new items from others: email them oldest first, and claim the send');
+  d = L.decideActivity(base, 'posts', [post('Mike', 5), post('michael f', 2)], NOW, opts);
+  eq([d.status, d.next.seen.posts, 'pending' in d], ['self', t(2), false], 'only Mike\'s own actions: move on without an email');
+  d = L.decideActivity(base, 'posts', [post('Mike', 5, 'mine'), post('Nate', 2, 'theirs')], NOW, opts);
+  eq([d.status, d.pending.map((x) => x.text), d.advanceTo], ['send', ['theirs'], t(2)], 'a mix: only the others\' items go in the email');
+  d = L.decideActivity(base, 'posts', [post('Nate', 5)], NOW, { admins: names, mailReady: false });
+  eq([d.status, 'next' in d], ['off', false], 'email not set up yet: nothing is sent and the item stays pending for later');
+  d = L.decideActivity(Object.assign({}, base, { sent: [t(1), t(2), t(3), t(4), t(5), t(6)] }), 'posts', [post('Nate', 0.5)], NOW, opts);
+  eq(d.status, 'held', 'six alert emails in ten minutes: the next one is held');
+  d = L.decideActivity(Object.assign({}, base, { sent: [t(11), t(12), t(13), t(14), t(15), t(16)] }), 'posts', [post('Nate', 0.5)], NOW, opts);
+  eq(d.status, 'send', 'once those are more than ten minutes old, it goes');
+  d = L.decideActivity(Object.assign({}, base, { claim: { posts: t(1) } }), 'posts', [post('Nate', 0.5)], NOW, opts);
+  eq(d.status, 'busy', 'another request is sending this kind right now: leave it alone');
+  d = L.decideActivity(Object.assign({}, base, { claim: { posts: t(6) } }), 'posts', [post('Nate', 0.5)], NOW, opts);
+  eq(d.status, 'send', 'a send that never finished is retried after five minutes');
+  d = L.decideActivity(Object.assign({}, base, { claim: { files: t(1) } }), 'posts', [post('Nate', 0.5)], NOW, opts);
+  eq(d.status, 'send', 'a send in progress for one kind does not block another kind');
+  ok(!('posts' in base.claim) && base.seen.posts === t(30) && base.sent.length === 0, 'deciding never alters the stored state in place');
+
+  const claimed = L.decideActivity(base, 'posts', [post('Nate', 2)], NOW, opts).next;
+  const after = L.finishActivity(claimed, 'posts', t(2), NOW);
+  eq([after.seen.posts, after.seen.files, 'posts' in after.claim, after.sent.length], [t(2), t(30), false, 1], 'after sending: "told up to" moves forward, the claim is dropped, the send is noted, other kinds untouched');
+  eq(L.decideActivity(after, 'posts', [post('Nate', 2)], NOW, opts).status, 'none', 'and the same item is never news twice');
+  eq(L.finishActivity(after, 'posts', t(20), NOW).seen.posts, t(2), '"told up to" never moves backwards');
+  eq(L.finishActivity(after, 'posts', t(2), NOW).sent.length, 1, 'being told twice that the same email went out counts as one email, not two');
+  d = L.decideActivity(Object.assign({}, base, { sent: [t(1), t(2), t(3), t(4), t(5), t(6)] }), 'posts', [post('Nate', 0.5)], NOW, { admins: names, mailReady: true, noLimit: true });
+  eq(d.status, 'send', 'the flood brake does not apply to a collector that comes by on a schedule');
+
+  eq(L.activityItems.posts({ messages: [{ by: 'Nate', at: t(1), text: 'hi' }] }), [{ t: t(1), by: 'Nate', text: 'hi' }], 'board posts are read into the common shape');
+  eq(L.activityItems.statuses({ items: { outline: { status: 'done', by: 'Pat', at: t(1) } } }), [{ t: t(1), by: 'Pat', id: 'outline', status: 'done' }], 'so are roadmap statuses');
+  const mi = L.activityItems.meetings([{ at: t(1), by: 'Pat', title: 'T', date: '2026-11-26', disc: 'd', prog: '', decisions: ['a', 'b'], actionItems: [{}] }])[0];
+  eq([mi.t, mi.by, mi.title, mi.decisions, mi.actions], [t(1), 'Pat', 'T', 2, 1], 'and meetings, with how many decisions and action items');
+  eq(L.activityItems.files([{ pathname: 'a/Deck-AbCdEfGhIjKlMnOpQrStUvWx.pptx', uploadedAt: new Date(NOW), size: 10 }], 'Nate'), [{ t: new Date(NOW).toISOString(), by: 'Nate', name: 'Deck.pptx', size: 10 }], 'and Library files, with their clean names');
+  eq(L.roadmapTitles({ now: [{ id: 'outline', t: 'Outline a deliverable' }], next: [{ id: 'x' }] }), { outline: 'Outline a deliverable', x: 'x' }, 'roadmap step titles are looked up by id');
+  eq([L.fmtSize(900), L.fmtSize(5000), L.fmtSize(2202009), L.fmtSize(undefined)], ['900 B', '5 KB', '2.1 MB', ''], 'file sizes read naturally');
+}
+
+group('Activity alerts: the emails');
+{
+  const t0 = new Date(NOW).toISOString();
+  const all = [];
+  let a = L.composeActivity('posts', [{ t: t0, by: 'Nate', text: 'Deck is ready.\nPlease <b>review</b> & comment' }]); all.push(a);
+  eq(a.subject, 'Nate posted on the board: Deck is ready. Please <b>review</b> & comment', 'a board post: the subject says who and what');
+  ok(a.html.indexOf('Deck is ready.<br>Please &lt;b&gt;review&lt;/b&gt; &amp; comment') > 0 && a.html.indexOf('<b>review</b>') < 0, 'the post is shown in full, line breaks kept, and escaped');
+  ok(a.html.indexOf('Nov 29, 6:05 PM MT') > 0 && a.html.indexOf(L.SITE + '/progress.html') > 0 && a.html.indexOf('Open the board') > 0, 'with the time in Mountain and a button to the board');
+
+  a = L.composeActivity('statuses', [{ t: t0, by: 'Pat', id: 'outline', status: 'done' }], { titles: { outline: 'Outline a deliverable' } }); all.push(a);
+  eq(a.subject, 'Pat moved "Outline a deliverable" to Done', 'a roadmap change: the subject says who moved what to which status');
+  ok(a.text.indexOf('Outline a deliverable is now Done') > 0 && a.html.indexOf('Roadmap update') > 0 && a.html.indexOf('Open the roadmap') > 0, 'and the email says the same');
+  eq(L.composeActivity('statuses', [{ t: t0, by: 'Pat', id: 'gone', status: 'weird' }], {}).subject, 'Pat moved "gone" to weird', 'an unknown step or status still produces a readable email');
+
+  a = L.composeActivity('meetings', [{ t: t0, by: 'Pat', title: 'Weekly sync', date: '2026-11-26', disc: 'We covered the outline.', prog: '', decisions: 2, actions: 1 }]); all.push(a);
+  eq(a.subject, 'Pat logged a meeting: Weekly sync', 'a meeting: the subject says who logged which meeting');
+  ok(a.text.indexOf('Weekly sync (Thu, Nov 26)') > 0 && a.text.indexOf('We covered the outline.') > 0 && a.text.indexOf('2 decisions, 1 action item') > 0, 'with its date, the gist, and how many decisions and action items');
+  ok(a.html.indexOf('Open Meeting Minutes') > 0 && a.html.indexOf(L.SITE + '/meetings.html') > 0, 'and a button to Meeting Minutes');
+  eq(L.composeActivity('meetings', [{ t: t0, by: 'someone', title: '', date: '', disc: '', prog: 'typed', decisions: 0, actions: 0 }]).subject, 'Someone logged a meeting: Meeting', 'a bare hand-typed meeting with no name still reads naturally');
+
+  a = L.composeActivity('files', [{ t: t0, by: 'Nate', name: 'Beam Deck v2.pptx', size: 2202009 }]); all.push(a);
+  eq(a.subject, 'New file in the Library: Beam Deck v2.pptx', 'an upload: the subject names the file');
+  ok(a.text.indexOf('Beam Deck v2.pptx (2.1 MB)') > 0 && a.text.indexOf('Nate') > 0 && a.html.indexOf('Open the Library') > 0, 'with its size, who uploaded it when known, and a button to the Library');
+  a = L.composeActivity('files', [{ t: t0, by: '', name: 'a.pdf', size: 10 }, { t: t0, by: '', name: 'b.pdf', size: 20 }]); all.push(a);
+  eq(a.subject, '2 new files in the Library', 'several files uploaded together arrive as one email');
+  ok(a.text.indexOf('a.pdf') > 0 && a.text.indexOf('b.pdf') > 0 && a.text.indexOf('Someone') < 0, 'listing each, and not inventing an uploader when it is not known');
+
+  const many = [];
+  for (let i = 0; i < 25; i++) many.push({ t: new Date(NOW - (25 - i) * 1000).toISOString(), by: 'Nate', text: 'post number ' + i + '.' });
+  a = L.composeActivity('posts', many); all.push(a);
+  eq(a.subject, '25 new posts on the board', 'a backlog arrives as one email');
+  ok(a.html.indexOf('Showing the latest 10 of 25.') > 0 && a.html.indexOf('post number 24.') > 0 && a.html.indexOf('post number 15.') > 0 && a.html.indexOf('post number 14.') < 0, 'showing the latest ten and saying how many there were');
+
+  ok(all.every((m) => !/undefined|NaN|\[object Object\]/.test(m.subject + m.html + m.text)), 'no junk in any of them');
+  ok(all.every((m) => (m.html.match(/<table/g) || []).length === (m.html.match(/<\/table>/g) || []).length && (m.html.match(/<div/g) || []).length === (m.html.match(/<\/div>/g) || []).length), 'and every one is well-formed');
+  ok(all.every((m) => m.text.indexOf('<td') < 0 && m.text.indexOf('style=') < 0), 'with a clean plain-text version');
+}
+
+// ---------------------------------------------------------------- the outbox
+group('The outbox: when the weekly summary is waiting to be collected');
+{
+  const at = (y, mo, d, h, mi) => new Date(Date.UTC(y, mo - 1, d, h, mi || 0));
+  // Winter: Mountain is UTC-7. Sunday is Nov 29 2026.
+  ok(!L.weeklyDue(at(2026, 11, 30, 0, 30), {}).due, 'Sunday 5:30 PM Mountain: not yet');
+  let w = L.weeklyDue(at(2026, 11, 30, 1, 5), {});
+  eq([w.due, w.date, new Date(w.asOf).toISOString()], [true, '2026-11-29', '2026-11-30T01:00:00.000Z'], 'Sunday 6:05 PM: waiting, for the week ending that Sunday, written as of 6 PM sharp');
+  w = L.weeklyDue(at(2026, 12, 1, 16, 0), {});
+  eq([w.due, w.date, new Date(w.asOf).toISOString()], [true, '2026-11-29', '2026-11-30T01:00:00.000Z'], 'Tuesday morning (the Mac was off since Sunday): still waiting, same week, same cut-off');
+  ok(L.weeklyDue(at(2026, 12, 3, 0, 30), {}).due, 'Wednesday 5:30 PM: still waiting');
+  ok(!L.weeklyDue(at(2026, 12, 3, 1, 30), {}).due, 'Wednesday 6:30 PM: too late; it waits for next Sunday rather than arrive stale');
+  ok(!L.weeklyDue(at(2026, 12, 4, 18, 0), {}).due && !L.weeklyDue(at(2026, 11, 29, 18, 0), {}).due, 'a Friday, or Sunday morning: nothing waiting');
+  ok(!L.weeklyDue(at(2026, 11, 30, 1, 5), { lastSent: '2026-11-29' }).due, 'already sent for that Sunday: not offered again');
+  ok(!L.weeklyDue(at(2026, 12, 1, 16, 0), { lastSent: '2026-11-30' }).due, 'sent by hand on the Monday: not offered again that week');
+  ok(L.weeklyDue(at(2026, 11, 30, 1, 5), { lastSent: '2026-11-22' }).due, 'last week\'s send does not block this week');
+  const claim = { claim: { date: '2026-11-29', at: at(2026, 11, 30, 1, 0).toISOString() } };
+  ok(!L.weeklyDue(at(2026, 11, 30, 1, 5), claim).due, 'collected five minutes ago and being sent: not handed out twice');
+  ok(L.weeklyDue(at(2026, 11, 30, 1, 30), claim).due, 'collected half an hour ago and never reported sent: offered again');
+  // Summer: Mountain is UTC-6. Sunday is Jul 12 2026.
+  w = L.weeklyDue(at(2026, 7, 13, 0, 5), {});
+  eq([w.due, w.date, new Date(w.asOf).toISOString()], [true, '2026-07-12', '2026-07-13T00:00:00.000Z'], 'in summer the 6 PM cut-off falls an hour earlier in UTC, and that is handled');
+  eq(L.weeklyDue(at(2026, 9, 1, 18, 0), {}).date, '2026-08-30', 'the week\'s Sunday is found correctly across a month boundary');
+  eq(L.weeklyDue(at(2027, 1, 4, 18, 0), {}).date, '2027-01-03', 'and across a year boundary');
+
+  let weeks = 0;
+  const bad = [], st = {};
+  for (let t = Date.UTC(2026, 0, 4, 12); t < Date.UTC(2029, 0, 1); t += 6 * 3600000) {
+    const r = L.weeklyDue(new Date(t), st);
+    if (!r.due) continue;
+    const cut = L.localParts(new Date(r.asOf));
+    if (cut.weekday !== 'Sun' || cut.hour !== 18 || cut.minute !== 0 || cut.date !== r.date) bad.push('cut-off ' + new Date(r.asOf).toISOString());
+    if (st.lastSent === r.date) bad.push('twice ' + r.date);
+    st.lastSent = r.date; weeks++;
+  }
+  ok(weeks >= 155 && weeks <= 157 && bad.length === 0, 'three years of checking every six hours: one summary a week (' + weeks + '), each cut off at Sunday 6:00 PM Mountain', bad.slice(0, 3));
+}
+
+group('The outbox: reporting what was sent');
+{
+  eq(L.parseOutboxKey('s|fmwxr2cj7t3333a,fmwxr2cjrr8ydsf', NOW), { type: 's', ids: ['fmwxr2cj7t3333a', 'fmwxr2cjrr8ydsf'] }, 'a suggestion-alert key names the suggestions it covered');
+  eq(L.parseOutboxKey('s|fmwxr2cj7t3333a,not-an-id', NOW), { type: 's', ids: ['fmwxr2cj7t3333a'] }, 'anything in it that is not a suggestion id is dropped');
+  eq(L.parseOutboxKey('s|nope', NOW), null, 'and a key with no real ids records nothing');
+  eq(L.parseOutboxKey('a|posts|' + ago(1), NOW), { type: 'a', kind: 'posts', upTo: ago(1) }, 'an activity key says which kind, and up to when Mike has now been told');
+  eq(L.parseOutboxKey('a|secrets|' + ago(1), NOW), null, 'an unknown kind is refused');
+  eq(L.parseOutboxKey('a|posts|' + new Date(NOW + 3600000).toISOString(), NOW), null, 'a time in the future is refused, so nothing can be marked as told before it happens');
+  eq(L.parseOutboxKey('a|posts|yesterday', NOW), null, 'a nonsense time is refused');
+  eq(L.parseOutboxKey('w|2026-11-29', NOW), { type: 'w', date: '2026-11-29' }, 'a weekly key names the Sunday the summary was for');
+  eq([L.parseOutboxKey('w|2027-01-03', NOW), L.parseOutboxKey('w|soon', NOW)], [null, null], 'a future or nonsense week is refused');
+  eq([L.parseOutboxKey('', NOW), L.parseOutboxKey(null, NOW), L.parseOutboxKey('x|y', NOW), L.parseOutboxKey({}, NOW), L.parseOutboxKey('s|a|b', NOW)], [null, null, null, null, null], 'anything else records nothing and crashes nothing');
+}
+
 // ---------------------------------------------------------------- the board
 group('The board: posts');
 {

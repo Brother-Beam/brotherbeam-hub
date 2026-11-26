@@ -13,8 +13,14 @@
 // (beam-progress-sandbox) instead of the real one. That is how this gets tested on the
 // live site without leaving a trace on the founders' board. In the sandbox only, the
 // action 'reset' empties it again.
-import { bodyOf, boardOf, buildPost, addPost, buildStatus, setStatus, stepIds, fits } from './_lib/logic.js';
+import { bodyOf, boardOf, buildPost, addPost, buildStatus, setStatus, stepIds, fits, activityItems, roadmapTitles } from './_lib/logic.js';
 import { kvGet, kvUpdate, loadSiteJson, storeReady } from './_lib/store.js';
+import { alertActivity, alertState } from './_lib/alerts.js';
+
+export const config = { maxDuration: 30 };
+
+// Roadmap step titles, for the status alert. Read only if an email is actually going out.
+async function titles() { return { titles: roadmapTitles((await loadSiteJson('roadmap.json')).data) }; }
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -23,8 +29,14 @@ export default async function handler(req, res) {
   const key = sandbox ? 'beam-progress-sandbox' : 'beam-progress';
   try {
     if (req.method === 'GET') {
-      const cur = await kvGet(key);
+      const got = await Promise.all([kvGet(key), sandbox ? null : alertState()]);
+      const cur = got[0];
       const b = boardOf(cur.value);
+      // Catch up on any alert that did not go out when its post or status change was made.
+      if (!sandbox) {
+        await alertActivity('posts', activityItems.posts(b), null, got[1]);
+        await alertActivity('statuses', activityItems.statuses(b), titles, got[1]);
+      }
       res.status(200).json({ items: b.items, messages: b.messages, updatedAt: cur.updatedAt, sandbox: sandbox });
       return;
     }
@@ -39,7 +51,10 @@ export default async function handler(req, res) {
       let out = {};
       const saved = await kvUpdate(key, function (v) { out = addPost(boardOf(v), made.post, now); return out.board; });
       if (out.full) { res.status(409).json({ error: 'The board is full, so this was not posted. Tell Mike so he can make room.' }); return; }
-      res.status(out.duplicate ? 200 : 201).json({ ok: true, duplicate: !!out.duplicate, board: boardOf(saved.value) });
+      const board = boardOf(saved.value);
+      // Saved. Now tell Mike (never from the sandbox, and never about his own posts).
+      if (!sandbox && !out.duplicate) await alertActivity('posts', activityItems.posts(board));
+      res.status(out.duplicate ? 200 : 201).json({ ok: true, duplicate: !!out.duplicate, board: board });
       return;
     }
 
@@ -55,7 +70,9 @@ export default async function handler(req, res) {
         return full ? undefined : next;
       });
       if (full) { res.status(409).json({ error: 'The board is full, so this was not saved. Tell Mike so he can make room.' }); return; }
-      res.status(200).json({ ok: true, board: boardOf(saved.value) });
+      const board = boardOf(saved.value);
+      if (!sandbox) await alertActivity('statuses', activityItems.statuses(board), { titles: roadmapTitles(roadmap.data) });
+      res.status(200).json({ ok: true, board: board });
       return;
     }
 

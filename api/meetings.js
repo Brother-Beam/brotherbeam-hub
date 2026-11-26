@@ -13,8 +13,11 @@
 // Sandbox. Add ?sandbox=1 and everything reads and writes a separate key
 // (beam-meetings-sandbox) instead of the real log, for testing on the live site. In the
 // sandbox only, the action 'reset' empties it again.
-import { bodyOf, meetingsOf, buildMeeting, addMeeting, removeMeeting } from './_lib/logic.js';
+import { bodyOf, meetingsOf, buildMeeting, addMeeting, removeMeeting, activityItems } from './_lib/logic.js';
 import { kvGet, kvUpdate, storeReady } from './_lib/store.js';
+import { alertActivity, alertState } from './_lib/alerts.js';
+
+export const config = { maxDuration: 30 };
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -23,7 +26,10 @@ export default async function handler(req, res) {
   const key = sandbox ? 'beam-meetings-sandbox' : 'beam-meetings';
   try {
     if (req.method === 'GET') {
-      const cur = await kvGet(key);
+      const got = await Promise.all([kvGet(key), sandbox ? null : alertState()]);
+      const cur = got[0];
+      // Catch up on any alert that did not go out when its meeting was logged.
+      if (!sandbox) await alertActivity('meetings', activityItems.meetings(meetingsOf(cur.value)), null, got[1]);
       res.status(200).json({ meetings: meetingsOf(cur.value), updatedAt: cur.updatedAt, sandbox: sandbox });
       return;
     }
@@ -41,6 +47,8 @@ export default async function handler(req, res) {
         return out.list ? { meetings: out.list } : undefined;
       });
       if (out.full) { res.status(409).json({ error: 'The meeting log is full, so this was not saved. Tell Mike so he can make room.' }); return; }
+      // Saved. Now tell Mike (never from the sandbox, and never about meetings he logged himself).
+      if (!sandbox && !out.duplicate) await alertActivity('meetings', activityItems.meetings(meetingsOf(saved.value)));
       res.status(out.duplicate ? 200 : 201).json({ ok: true, duplicate: !!out.duplicate, meeting: out.duplicate || made.meeting, meetings: meetingsOf(saved.value) });
       return;
     }

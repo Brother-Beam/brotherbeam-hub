@@ -29,7 +29,7 @@ This is the hub's change process. Follow it every time; it is what keeps the que
 
 Every new feature gets a `whatsnew.json` entry even when nobody suggested it. Write `what` for a non-technical founder: what it does for them, not how it works.
 
-**Owed once email is switched on.** As of 2026-11-26 the two email settings were not yet in Vercel, so neither email sends, and the hub deliberately does not describe them yet (nothing on the site should claim something that is not running). When `/api/digest?status=1` shows `ready: true` and a test send has arrived: add `whatsnew.json` entries for the Sunday summary and for the instant suggestion alerts, add a line about both to the Guide ("Asking for a change to the hub" and "Good to know"), and add a card to "The pieces" in `build.html`.
+**Owed once email is flowing.** As of 2026-11-26 the delivery task had not yet been confirmed running, so the hub deliberately does not describe any email yet (nothing on the site should claim something that is not happening). Once Mike has received a real alert through the Claude task: add `whatsnew.json` entries for the Sunday summary and for the alerts, add a line about both to the Guide ("Asking for a change to the hub" and "Good to know"), and add a card to "The pieces" in `build.html`.
 
 ## The pages (static HTML, no build step)
 
@@ -53,13 +53,14 @@ Brand: font **Jost**. Tokens per page — paper `#F3F5F7`, ink `#141B22`, muted 
 
 - `board.js` — the RoadMap page's state. `GET` returns `{ items, messages }`; `POST { action: 'post', by, text }` adds a board post; `POST { action: 'status', id, status, by }` sets one roadmap step's status (the id must exist in `roadmap.json`).
 - `meetings.js` — the meeting log. `GET` returns `{ meetings }`; `POST { action: 'add', meeting }` appends one (the server assigns its `id` and `at`); `POST { action: 'remove', id }` takes one out.
-- `feedback.js` — the suggestions queue. `GET` returns `{ open, count }` after auto-clean; `POST { by, text, page }` adds one and **emails Mike straight away** (see "Email" below). Browsers can only read and add.
+- `feedback.js` — the suggestions queue. `GET` returns `{ open, count }` after auto-clean; `POST { by, text, page }` adds one. Browsers can only read and add.
+- `outbox.js` — the email the hub has ready, for the scheduled Claude task to collect and send (see "Email" below).
 
 No page ever sends a whole stored value back. Every page sends one small action, the endpoint applies it with `kvUpdate()` to whatever is stored at that moment, and replies with the up-to-date value, which the page then shows. That is what makes it safe for the three of them to use the hub at the same time. There is deliberately no generic "save this key" endpoint any more (the old `api/tasks.js` was removed): do not add one, and do not make a page keep state that it later writes back.
 - `digest.js` — the weekly email (below).
 - `parse-notes.js` — sends pasted meeting notes to the Anthropic API and returns `{title, discussed, decisions[], actionItems[{item,owner}]}`. Env: `ANTHROPIC_API_KEY`. Model `claude-opus-5-5`.
-- `blob-upload.js` / `blob-list.js` / `blob-delete.js` / `blob-get.js` — the Library's file store on **Vercel Blob**. Env: `BLOB_READ_WRITE_TOKEN`.
-- `_lib/logic.js` — all the rules, pure (no imports, no I/O): validating a suggestion, which suggestions are closed, which ones still need an alert, the board and meeting actions, the Sunday-evening decision, and composing both emails. `_lib/store.js` — I/O: `kvGet`, `kvUpdate`, `loadSiteJson`, `reconcileSuggestions` (the auto-clean). `_lib/mail.js` — sending (`mailReady`, `adminAddress`, `sendMail`), shared by the weekly email and the suggestion alerts. Files under `api/_lib` are not routes.
+- `blob-upload.js` / `blob-list.js` / `blob-delete.js` / `blob-get.js` — the Library's file store on **Vercel Blob**. Env: `BLOB_READ_WRITE_TOKEN`. Listing is also how a new upload is noticed.
+- `_lib/logic.js` — all the rules, pure (no imports, no I/O): validating a suggestion, which suggestions are closed, which ones still need an alert, the board and meeting actions, the Sunday-evening decision, and composing both emails. `_lib/store.js` — I/O: `kvGet`, `kvUpdate`, `loadSiteJson`, `reconcileSuggestions` (the auto-clean). `_lib/alerts.js` — notices new posts, statuses, meetings and files. `_lib/week.js` — gathers what the weekly summary is built from. `_lib/mail.js` — sending, used only if the hub is ever given its own sender. Files under `api/_lib` are not routes.
 
 ### Store keys (Railway, via `HUB_API_BASE` / `HUB_API_TOKEN`)
 
@@ -69,7 +70,8 @@ No page ever sends a whole stored value back. Every page sends one small action,
 | `beam-meetings` | `{ meetings: [{ id, date, title, disc, decisions[], actionItems[], prog, by, at, source }] }` | `meetings.js` only |
 | `beam-feedback` | `{ feedback: [{ id, by, at, text, page, mailed?, mailClaim? }] }` — open suggestions only. `mailed` (when its alert went out, or `'skip'`) and `mailClaim` are private; `publicEntry()` strips them before anything reaches a browser | `feedback.js` only |
 | `beam-feedback-closed` | `{ closed: [{ id, by, outcome, closedAt }] }` — a tally, never the text | auto-clean only |
-| `beam-digest-state` | `{ lastSent, lastSentAt, lastCounts, lastError, lastTest, claim }` | `digest.js` only |
+| `beam-digest-state` | `{ lastSent, lastSentAt, lastVia, lastCounts, lastError, lastTest, claim }` | `digest.js` and `outbox.js` |
+| `beam-alert-state` | `{ seen: { posts, statuses, meetings, files }, claim: { [kind]: time }, sent: [times] }` | `_lib/alerts.js` and `outbox.js` |
 | `beam-progress-sandbox`, `beam-meetings-sandbox` | same shapes as the real two | `board.js` / `meetings.js` with `?sandbox=1` (test data only) |
 
 The store has **versioned writes** (see `../api/CLAUDE.md`). Every write to every key goes through `kvUpdate(key, change)`, which reads, applies the change, writes with the version it read, and retries on a conflict. Never write a key any other way. `change()` may run more than once, so it must be free of side effects that add up.
@@ -78,23 +80,34 @@ Nothing is ever dropped to make room. Each value has to fit the store's 200 KB l
 
 What the pages keep in `localStorage` (`bb-progress-local`, `bb-meetings-local`) is only the last copy the server sent, shown if the server cannot be reached. It is never used to save.
 
-## Email: one setup, two uses
+## Email: written by the hub, delivered by Claude
 
-The hub sends two kinds of email, both from Mike's Gmail, both through `_lib/mail.js`, both switched on by the same two Vercel settings (below).
+**The decision (Mike, 2026-11-26): no email password is stored at Vercel.** He was offered the hub sending its own email with a Gmail app password and said no. Do not suggest it again unless he raises it. Email is therefore delivered by a scheduled Claude task on Mike's Mac, through the Gmail connection he already has in Claude.
 
-**1. Suggestion alerts, immediately.** Mike asked for this so he can act on a suggestion the moment it arrives instead of finding it on Sunday. When `POST /api/feedback` saves a suggestion it emails the first address in `DIGEST_TO` (Mike) with who sent it, from which page, the full text, and its `Ref` (the id to put in `resolves`). Rules, all in `logic.js` and pinned by tests:
-- The suggestion is saved first; the email comes after. A mail problem never loses or blocks a suggestion, and the sender always sees it accepted.
-- If the email does not go out (mail not set up, Gmail unreachable), the suggestion stays unmailed and the next request that reads or adds to the queue sends it. Once the two settings are added, everything that was waiting goes out in one email. There is no timer.
-- At most six alert emails in ten minutes; past that, new ones are held and go out together. Each alert is claimed before sending so simultaneous requests never send it twice.
-- The reply's `alert` field says what happened: `sent`, `held`, `failed`, `skipped` or `off`.
+The split of work is deliberate: **the hub decides and writes; Claude only collects and sends.** Every rule (what is news, who it is from, what the email says, when the weekly summary is due) lives in `logic.js` and is tested. The scheduled task contains no rules, only "collect, send, report".
 
-**2. The weekly summary.** Every **Sunday at 6:00 PM Mountain**, `digest.js` emails the three founders the week in the hub: where the roadmap stands, meetings logged (with decisions and action items), files added to the Library, board posts, new What's-new entries, and the state of the suggestions queue.
+What gets emailed:
 
-- **Schedule.** `vercel.json` has two cron slots, Monday 00:00 and 01:00 UTC, because cron is UTC and Mountain time moves with daylight saving. `decide()` checks Mountain time itself and sends in the 6 PM hour. It claims the day in `beam-digest-state` before sending (so two runs cannot both send) and records `lastSent` after; on failure it releases the claim so the next slot retries. To change the day or hour, change `SEND_WEEKDAY` / `SEND_HOURS` in `logic.js` **and** the cron slots, then run the tests.
-- **Environment (Vercel): two settings.** `DIGEST_TO` (comma-separated recipients, Mike first; kept here and **never in this public repo**) and `GMAIL_APP_PASSWORD` (a Google app password for the first address in `DIGEST_TO`, which is the account it sends from). Optional: `GMAIL_USER` to send from a different Gmail account; `RESEND_API_KEY` + `DIGEST_FROM` to send through Resend from a verified domain instead; `CRON_SECRET` for strict mode. Env changes need a redeploy.
-- **Why no secret is needed by default.** The scheduled run can only send this week's email, once, inside the Sunday 6-8 PM Mountain window; outside it does nothing. So an open call has nothing to abuse. With `CRON_SECRET` set, the scheduled run requires it too (Vercel Cron sends it automatically).
-- **Checking it** (no secret needed): `/api/digest?status=1` shows what is configured, what is missing and when it last sent. `/api/digest?preview=1&pw=scooter` renders the email as it would look now. `/api/digest?dry=1&pw=scooter&now=2026-11-30T01:05:00Z` says whether the scheduler would send at that moment. None of these send.
-- **Sending by hand.** `?test=1&pw=scooter` sends only to the first address in `DIGEST_TO` (Mike), at most once every 10 minutes. `?force=1&secret=…` sends to everyone now and always needs `CRON_SECRET`. Sending real email to the founders is Mike's call; ask first.
+| What | To | When it is ready |
+|---|---|---|
+| A suggestion from the box on any page | Mike | as soon as it is sent |
+| A board post, a roadmap status change, a meeting logged, a file uploaded to the Library | Mike | as soon as it happens |
+| The weekly summary | all three | from Sunday 6 PM Mountain until Wednesday 6 PM, written as of Sunday 6 PM |
+
+Mike is not emailed about his own posts, status changes, meetings or uploads. "His own" means the name typed starts with Mike or Michael (`ADMIN_NAMES` in Vercel changes the list). The Library page sends the remembered name in an `x-hub-by` header after its own upload, which is how an upload gets an owner.
+
+**The outbox, `/api/outbox`** (needs `?pw=scooter`):
+- `GET` returns `{ mail: [{ key, to, subject, text, html? }] }`: everything ready right now. `to` is a role, `mike` or `everyone`, never an address. `html` is left out when it is over 12 KB (the weekly summary), because whoever delivers has to hand the body to the mail tool; the plain text goes instead.
+- Collecting **claims** each email for a few minutes so two collectors cannot both send it. `POST { sent: [keys] }` records it for good. If the collector never reports back, the claim lapses and the email is offered again: nothing is lost, at worst something goes twice.
+- `GET ...&dry=1` shows what is waiting and changes nothing. Add `&now=2026-11-30T01:30:00Z` to see what would be waiting at another moment (for example a Sunday evening).
+
+**The scheduled task** lives on Mike's Mac, not in this repo: `~/.claude/scheduled-tasks/` (the `mcp__scheduled-tasks__*` tools list and edit it). Its prompt holds the three email addresses, which is why they never need to be in this public repo or in Vercel. It only runs while the Claude app is open; anything that became ready while it was closed is delivered at the next run, which is exactly what the claim-and-catch-up design is for. If Mike reports missing or duplicate email, check the task's run history first, then `/api/outbox?pw=scooter&dry=1`.
+
+How "news" is tracked: suggestions carry private marks (`mailed`, `mailClaim`) in `beam-feedback`; everything else uses one small value, `beam-alert-state`, holding per kind the time of the newest item Mike has been told about. The first time a kind is looked at it starts from a minute before, so nothing that was already in the hub is ever sent as a backlog.
+
+**If the hub is ever given a way to send by itself** (it has not been): `_lib/mail.js` can send through Gmail (`DIGEST_TO` + `GMAIL_APP_PASSWORD`) or Resend (`RESEND_API_KEY` + `DIGEST_FROM`). With either set, the same endpoints send each alert at the moment it happens (`_lib/alerts.js`, `feedback.js`) and `digest.js` sends the weekly summary on the Sunday cron in `vercel.json`; the outbox then has nothing left to hand over, so the two routes cannot double-send. Without them those code paths do nothing except keep the "told up to" marks moving, and `/api/digest?status=1` reports `ready: false`. That is the expected state, not a fault.
+
+Also useful: `/api/digest?preview=1&pw=scooter` renders the weekly summary as it would look right now (the designed HTML version), and `&format=text` shows the plain-text version that is actually delivered.
 
 ## Tests (run before every deploy)
 
@@ -115,7 +128,7 @@ Board posts cannot be deleted and meetings are the company's record, so never te
 
 ### Testing the queue on the live site
 
-To check the queue for real, send suggestions under a name ending in **`(testing)`** (for example `Claude (testing)`), with text starting `TEST`, and **add `"quiet": true` to the POST body** so they do not email Mike (only test data may be quiet; without it a test suggestion emails him, marked `[Test]`, which is the right way to check one alert end to end with his say-so). They are stored, shown in the queue and cleared by auto-clean exactly like real ones, but `isTestEntry()` keeps them out of the weekly email's counts, so a test can never reach the founders' inboxes. Clear them the real way: put their ids under `declined` in `whatsnew.json` and deploy; once `/api/feedback` shows them gone, take the ids back out of `declined` in the next commit so the file stays tidy. `/api/digest?preview=1&pw=scooter&format=json&tests=1` counts test data too, which is how to confirm the tally was written. Never mark a suggestion `declined` unless it is test data or Mike said to pass on it.
+To check the queue for real, send suggestions under a name ending in **`(testing)`** (for example `Claude (testing)`), with text starting `TEST`, and **add `"quiet": true` to the POST body** so they are never emailed to Mike (only test data may be quiet; without it a test suggestion lands in the outbox marked `[Test]` and the Claude task will send it to him, which is the right way to check one alert end to end with his say-so). They are stored, shown in the queue and cleared by auto-clean exactly like real ones, but `isTestEntry()` keeps them out of the weekly email's counts, so a test can never reach the founders' inboxes. Clear them the real way: put their ids under `declined` in `whatsnew.json` and deploy; once `/api/feedback` shows them gone, take the ids back out of `declined` in the next commit so the file stays tidy. `/api/digest?preview=1&pw=scooter&format=json&tests=1` counts test data too, which is how to confirm the tally was written. Never mark a suggestion `declined` unless it is test data or Mike said to pass on it.
 
 ## Blob gotchas (hard-won — do not regress)
 

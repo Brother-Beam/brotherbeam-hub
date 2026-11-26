@@ -57,6 +57,15 @@ async function sendOnce(to, subject, html, text) {
   return { ok: false, error: 'no way to send is set up' };
 }
 
+// The same, but gives up waiting after limitMs, so a slow mail server can never hold up
+// the request that triggered the email. One attempt; a later request retries.
+export function sendWithin(to, subject, html, text, limitMs) {
+  return Promise.race([
+    sendMail(to, subject, html, text, 1),
+    new Promise(function (r) { setTimeout(function () { r({ ok: false, error: 'the mail server took too long' }); }, limitMs); }),
+  ]);
+}
+
 // Sends one email and reports { ok } or { ok: false, error }. It never throws.
 // attempts: how many tries, 2.5 seconds apart (the weekly summary uses 2; alerts use 1,
 // because a failed alert is picked up again the next time the queue is read).

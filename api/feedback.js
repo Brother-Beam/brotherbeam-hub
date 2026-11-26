@@ -18,21 +18,17 @@
 // (a quiet test), or off (mail is not set up).
 import { bodyOf, buildSuggestion, addSuggestion, listOf, pickForAlert, claimForAlert, markAlerted, publicEntry, composeAlert } from './_lib/logic.js';
 import { kvUpdate, reconcileSuggestions, storeReady } from './_lib/store.js';
-import { mailReady, adminAddress, sendMail } from './_lib/mail.js';
+import { mailReady, adminAddress, sendWithin } from './_lib/mail.js';
 
 export const config = { maxDuration: 30 };
 
 const SEND_LIMIT_MS = 9000;   // the longest a request will wait on the mail server
 
-function within(promise, limit) {
-  return Promise.race([promise, new Promise(function (r) { setTimeout(function () { r({ ok: false, error: 'the mail server took too long' }); }, limit); })]);
-}
-
 // Emails Mike the suggestions this request claimed, then records that they were mailed.
 // If the send fails nothing is recorded: the claim lapses and a later request retries.
 async function alertAbout(entries, openCount) {
   const mail = composeAlert(entries, openCount, Date.now());
-  const sent = await within(sendMail([adminAddress()], mail.subject, mail.html, mail.text, 1), SEND_LIMIT_MS);
+  const sent = await sendWithin([adminAddress()], mail.subject, mail.html, mail.text, SEND_LIMIT_MS);
   if (!sent.ok) return false;
   const ids = entries.map(function (e) { return e.id; });
   const stamp = new Date().toISOString();
